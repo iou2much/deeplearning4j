@@ -87,7 +87,7 @@
         <camel.version>2.16.3</camel.version>
         <zookeeper.version>3.4.6</zookeeper.version>
         <kafka.version>0.8.2.2</kafka.version>
-        <spark.version>1.5.2</spark.version>
+        <spark.version>1.6.2</spark.version>
         <agrona.version>0.5.4</agrona.version>
         <mapdb.version>3.0.2</mapdb.version>
         <sqlite.version>3.15.1</sqlite.version>
@@ -264,7 +264,7 @@
         <module>deeplearning4j-scaleout</module>
         <module>deeplearning4j-ui-parent</module>
         <module>deeplearning4j-graph</module>
-        <module>deeplearning4j-cuda</module>
+        <!--<module>deeplearning4j-cuda</module>-->
         <module>deeplearning4j-nlp-parent</module>
         <module>deeplearning4j-nn</module>
         <module>deeplearning4j-modelimport</module>
