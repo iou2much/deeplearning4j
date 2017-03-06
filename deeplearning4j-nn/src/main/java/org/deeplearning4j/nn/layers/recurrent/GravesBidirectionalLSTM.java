@@ -20,6 +20,7 @@ package org.deeplearning4j.nn.layers.recurrent;
 
 import org.deeplearning4j.berkeley.Pair;
 import org.deeplearning4j.nn.api.Layer;
+import org.deeplearning4j.nn.api.MaskState;
 import org.deeplearning4j.nn.conf.NeuralNetConfiguration;
 import org.deeplearning4j.nn.gradient.DefaultGradient;
 import org.deeplearning4j.nn.gradient.Gradient;
@@ -103,7 +104,8 @@ public class GravesBidirectionalLSTM extends BaseRecurrentLayer<org.deeplearning
                 GravesBidirectionalLSTMParamInitializer.INPUT_WEIGHT_KEY_FORWARDS,
                 GravesBidirectionalLSTMParamInitializer.RECURRENT_WEIGHT_KEY_FORWARDS,
                 GravesBidirectionalLSTMParamInitializer.BIAS_KEY_FORWARDS,
-                gradientViews);
+                gradientViews,
+                maskArray);
 
 
 
@@ -123,7 +125,8 @@ public class GravesBidirectionalLSTM extends BaseRecurrentLayer<org.deeplearning
                 GravesBidirectionalLSTMParamInitializer.INPUT_WEIGHT_KEY_BACKWARDS,
                 GravesBidirectionalLSTMParamInitializer.RECURRENT_WEIGHT_KEY_BACKWARDS,
                 GravesBidirectionalLSTMParamInitializer.BIAS_KEY_BACKWARDS,
-                gradientViews);
+                gradientViews,
+                maskArray);
 
 
         //merge the gradient, which is key value pair of String,INDArray
@@ -202,7 +205,8 @@ public class GravesBidirectionalLSTM extends BaseRecurrentLayer<org.deeplearning
                 getParam(GravesBidirectionalLSTMParamInitializer.INPUT_WEIGHT_KEY_FORWARDS),
                 getParam(GravesBidirectionalLSTMParamInitializer.BIAS_KEY_FORWARDS),
                 training,null,null,forBackprop,true,
-                GravesBidirectionalLSTMParamInitializer.INPUT_WEIGHT_KEY_FORWARDS);
+                GravesBidirectionalLSTMParamInitializer.INPUT_WEIGHT_KEY_FORWARDS,
+                maskArray);
 
         final FwdPassReturn backwardsEval = LSTMHelpers.activateHelper(
                 this,
@@ -213,7 +217,8 @@ public class GravesBidirectionalLSTM extends BaseRecurrentLayer<org.deeplearning
                 getParam(GravesBidirectionalLSTMParamInitializer.INPUT_WEIGHT_KEY_BACKWARDS),
                 getParam(GravesBidirectionalLSTMParamInitializer.BIAS_KEY_BACKWARDS),
                 training,null,null,forBackprop,false,
-                GravesBidirectionalLSTMParamInitializer.INPUT_WEIGHT_KEY_BACKWARDS);
+                GravesBidirectionalLSTMParamInitializer.INPUT_WEIGHT_KEY_BACKWARDS,
+                maskArray);
 
 
         //sum outputs
@@ -253,7 +258,8 @@ public class GravesBidirectionalLSTM extends BaseRecurrentLayer<org.deeplearning
                 prevMemCellState,
                 forBackprop,
                 forwards,
-                inputKey);
+                inputKey,
+                maskArray);
 
     }
 
@@ -279,12 +285,12 @@ public class GravesBidirectionalLSTM extends BaseRecurrentLayer<org.deeplearning
 
     @Override
     public double calcL2(boolean backpropParamsOnly) {
-        if (!conf.isUseRegularization() || conf.getLayer().getL2() <= 0.0) return 0.0;
+        if (!conf.isUseRegularization()) return 0.0;
 
         double l2Sum = 0.0;
-        for(Map.Entry<String,INDArray> entry : paramTable().entrySet()){
+        for (Map.Entry<String, INDArray> entry : paramTable().entrySet()) {
             double l2 = conf.getL2ByParam(entry.getKey());
-            if(l2 > 0) {
+            if (l2 > 0) {
                 double norm2 = getParam(entry.getKey()).norm2Number().doubleValue();
                 l2Sum += 0.5 * l2 * norm2 * norm2;
             }
@@ -294,15 +300,14 @@ public class GravesBidirectionalLSTM extends BaseRecurrentLayer<org.deeplearning
     }
 
 
-
     @Override
     public double calcL1(boolean backpropParamsOnly) {
-        if (!conf.isUseRegularization() || conf.getLayer().getL1() <= 0.0) return 0.0;
+        if (!conf.isUseRegularization()) return 0.0;
 
         double l1Sum = 0.0;
-        for(Map.Entry<String,INDArray> entry : paramTable().entrySet()){
+        for (Map.Entry<String, INDArray> entry : paramTable().entrySet()) {
             double l1 = conf.getL1ByParam(entry.getKey());
-            if(l1 > 0) {
+            if (l1 > 0) {
                 double norm1 = getParam(entry.getKey()).norm1Number().doubleValue();
                 l1Sum += l1 * norm1;
             }
@@ -320,6 +325,21 @@ public class GravesBidirectionalLSTM extends BaseRecurrentLayer<org.deeplearning
 
     @Override
     public INDArray rnnActivateUsingStoredState(INDArray input, boolean training, boolean storeLastForTBPTT) {
-        throw new UnsupportedOperationException("no such thing as stored state for bidirectional RNN");
+        throw new UnsupportedOperationException("Cannot set stored state: bidirectional RNNs don't have stored state");
+    }
+
+
+    @Override
+    public Pair<INDArray, MaskState> feedForwardMaskArray(INDArray maskArray, MaskState currentMaskState, int minibatchSize) {
+        //Bidirectional RNNs operate differently to standard RNNs from a masking perspective
+        //Specifically, the masks are applied regardless of the mask state
+        //For example, input -> RNN -> Bidirectional-RNN: we should still mask the activations and errors in the bi-RNN
+        // even though the normal RNN has marked the current mask state as 'passthrough'
+        //Consequently, the mask is marked as active again
+
+        this.maskArray = maskArray;
+        this.maskState = currentMaskState;
+
+        return new Pair<>(maskArray, MaskState.Active);
     }
 }

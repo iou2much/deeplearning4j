@@ -12,6 +12,7 @@ import org.deeplearning4j.nn.conf.*;
 import org.deeplearning4j.nn.conf.distribution.UniformDistribution;
 import org.deeplearning4j.nn.conf.graph.LayerVertex;
 import org.deeplearning4j.nn.conf.graph.MergeVertex;
+import org.deeplearning4j.nn.conf.graph.SubsetVertex;
 import org.deeplearning4j.nn.conf.inputs.InputType;
 import org.deeplearning4j.nn.conf.layers.*;
 import org.deeplearning4j.nn.conf.preprocessor.CnnToFeedForwardPreProcessor;
@@ -21,10 +22,12 @@ import org.deeplearning4j.nn.conf.preprocessor.RnnToFeedForwardPreProcessor;
 import org.deeplearning4j.nn.gradient.DefaultGradient;
 import org.deeplearning4j.nn.gradient.Gradient;
 import org.deeplearning4j.nn.multilayer.MultiLayerNetwork;
+import org.deeplearning4j.nn.transferlearning.TransferLearning;
 import org.deeplearning4j.nn.weights.WeightInit;
 import org.deeplearning4j.optimize.listeners.ScoreIterationListener;
 import org.deeplearning4j.util.ModelSerializer;
 import org.junit.Test;
+import org.nd4j.linalg.activations.Activation;
 import org.nd4j.linalg.api.ndarray.INDArray;
 import org.nd4j.linalg.dataset.DataSet;
 import org.nd4j.linalg.dataset.api.iterator.DataSetIterator;
@@ -75,12 +78,12 @@ public class TestComputationGraphNetwork {
                 .addLayer("firstLayer",
                         new org.deeplearning4j.nn.conf.layers.RBM.Builder()
                                 .lossFunction(LossFunctions.LossFunction.COSINE_PROXIMITY)
-                                .activation("identity")
+                                .activation(Activation.IDENTITY)
                                 .nIn(nIn).nOut(nOut).build()
                         , "input")
                 .addLayer("outputLayer",
                         new org.deeplearning4j.nn.conf.layers.OutputLayer.Builder(LossFunctions.LossFunction.COSINE_PROXIMITY)
-                                .activation("identity")
+                                .activation(Activation.IDENTITY)
                                 .nIn(nOut)
                                 .nOut(nOut).build()
                         , "firstLayer")
@@ -499,22 +502,22 @@ public class TestComputationGraphNetwork {
                 .addLayer("layer0", new RBM.Builder(RBM.HiddenUnit.GAUSSIAN, RBM.VisibleUnit.GAUSSIAN)
                         .nIn(4).nOut(3)
                         .weightInit(WeightInit.DISTRIBUTION).dist(new UniformDistribution(0, 1))
-                        .activation("tanh")
+                        .activation(Activation.TANH)
                         .lossFunction(LossFunctions.LossFunction.KL_DIVERGENCE).build(), "in")
                 .addLayer("layer1", new RBM.Builder(RBM.HiddenUnit.GAUSSIAN, RBM.VisibleUnit.GAUSSIAN)
                         .nIn(4).nOut(3)
                         .weightInit(WeightInit.DISTRIBUTION).dist(new UniformDistribution(0, 1))
-                        .activation("tanh")
+                        .activation(Activation.TANH)
                         .lossFunction(LossFunctions.LossFunction.KL_DIVERGENCE).build(), "in")
                 .addLayer("layer2", new RBM.Builder(RBM.HiddenUnit.GAUSSIAN, RBM.VisibleUnit.GAUSSIAN)
                         .nIn(3).nOut(3)
                         .weightInit(WeightInit.DISTRIBUTION).dist(new UniformDistribution(0, 1))
-                        .activation("tanh")
-                        .lossFunction(LossFunctions.LossFunction.KL_DIVERGENCE).build(),"layer1")
+                        .activation(Activation.TANH)
+                        .lossFunction(LossFunctions.LossFunction.KL_DIVERGENCE).build(), "layer1")
                 .addLayer("out", new org.deeplearning4j.nn.conf.layers.OutputLayer.Builder(LossFunctions.LossFunction.MCXENT)
-                        .nIn(3+3).nOut(3)
+                        .nIn(3 + 3).nOut(3)
                         .weightInit(WeightInit.DISTRIBUTION).dist(new UniformDistribution(0, 1))
-                        .activation("softmax").build(), "layer0","layer2")
+                        .activation(Activation.SOFTMAX).build(), "layer0", "layer2")
                 .setOutputs("out")
                 .pretrain(true).backprop(false)
                 .build();
@@ -536,7 +539,7 @@ public class TestComputationGraphNetwork {
         ComputationGraphConfiguration conf = new NeuralNetConfiguration.Builder()
                 .seed(12345)
                 .regularization(true).l1(0.01).l2(0.01)
-                .learningRate(0.1).activation("tanh").weightInit(WeightInit.XAVIER)
+                .learningRate(0.1).activation(Activation.TANH).weightInit(WeightInit.XAVIER)
                 .graphBuilder()
                 .addInputs("in")
                 .addLayer("0", new DenseLayer.Builder().nIn(nIn).nOut(20).build(),"in")
@@ -547,7 +550,7 @@ public class TestComputationGraphNetwork {
 
         ComputationGraphConfiguration confNoReg = new NeuralNetConfiguration.Builder()
                 .seed(12345)
-                .learningRate(0.1).activation("tanh").weightInit(WeightInit.XAVIER)
+                .learningRate(0.1).activation(Activation.TANH).weightInit(WeightInit.XAVIER)
                 .graphBuilder()
                 .addInputs("in")
                 .addLayer("0", new DenseLayer.Builder().nIn(nIn).nOut(20).build(), "in")
@@ -876,8 +879,8 @@ public class TestComputationGraphNetwork {
                 .seed(123)
                 .graphBuilder()
                 .addInputs("in")
-                .addLayer("0", new DenseLayer.Builder().nIn(4).nOut(3).weightInit(WeightInit.XAVIER).activation("tanh").build(), "in")
-                .addLayer("1", new org.deeplearning4j.nn.conf.layers.OutputLayer.Builder(LossFunctions.LossFunction.MCXENT).activation("softmax").nIn(3).nOut(3).build(), "0")
+                .addLayer("0", new DenseLayer.Builder().nIn(4).nOut(3).weightInit(WeightInit.XAVIER).activation(Activation.TANH).build(), "in")
+                .addLayer("1", new org.deeplearning4j.nn.conf.layers.OutputLayer.Builder(LossFunctions.LossFunction.MCXENT).activation(Activation.SOFTMAX).nIn(3).nOut(3).build(), "0")
                 .setOutputs("1")
                 .backprop(true).pretrain(false).build();
 
@@ -904,5 +907,42 @@ public class TestComputationGraphNetwork {
         ByteArrayInputStream bais = new ByteArrayInputStream(asBytes);
         ComputationGraph net = ModelSerializer.restoreComputationGraph(bais, true);
         assertEquals(7, net.getConfiguration().getIterationCount());
+    }
+
+    @Test
+    public void printSummary() {
+        NeuralNetConfiguration.Builder overallConf = new NeuralNetConfiguration.Builder()
+                .learningRate(0.1)
+                .activation(Activation.IDENTITY)
+                .optimizationAlgo(OptimizationAlgorithm.STOCHASTIC_GRADIENT_DESCENT)
+                .updater(Updater.SGD);
+
+        ComputationGraphConfiguration conf
+                = overallConf.graphBuilder()
+                .addInputs("inCentre", "inRight")
+                .addLayer("denseCentre0", new DenseLayer.Builder().nIn(10).nOut(9).build(), "inCentre")
+                .addLayer("denseCentre1", new DenseLayer.Builder().nIn(9).nOut(8).build(), "denseCentre0")
+                .addLayer("denseCentre2", new DenseLayer.Builder().nIn(8).nOut(7).build(), "denseCentre1")
+                .addLayer("denseCentre3", new DenseLayer.Builder().nIn(7).nOut(7).build(), "denseCentre2")
+                .addLayer("outCentre", new OutputLayer.Builder(LossFunctions.LossFunction.MSE).nIn(7).nOut(4).build(), "denseCentre3")
+                .addVertex("subsetLeft", new SubsetVertex(0, 3), "denseCentre1")
+                .addLayer("denseLeft0", new DenseLayer.Builder().nIn(4).nOut(5).build(), "subsetLeft")
+                .addLayer("outLeft", new OutputLayer.Builder(LossFunctions.LossFunction.MSE).nIn(5).nOut(6).build(), "denseLeft0")
+                .addLayer("denseRight", new DenseLayer.Builder().nIn(7).nOut(7).build(), "denseCentre2")
+                .addLayer("denseRight0", new DenseLayer.Builder().nIn(2).nOut(3).build(), "inRight")
+                .addVertex("mergeRight", new MergeVertex(), "denseRight", "denseRight0")
+                .addLayer("denseRight1", new DenseLayer.Builder().nIn(10).nOut(5).build(), "mergeRight")
+                .addLayer("outRight", new OutputLayer.Builder(LossFunctions.LossFunction.MSE).nIn(5).nOut(5).build(), "denseRight1")
+                .setOutputs("outLeft", "outCentre", "outRight")
+                .build();
+
+        ComputationGraph modelToTune = new ComputationGraph(conf);
+        modelToTune.init();
+        System.out.println(modelToTune.summary());
+
+        ComputationGraph modelNow = new TransferLearning.GraphBuilder(modelToTune)
+                .setFeatureExtractor("denseCentre2")
+                .build();
+        System.out.println(modelNow.summary());
     }
 }

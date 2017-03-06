@@ -5,6 +5,7 @@ import lombok.Data;
 import lombok.Getter;
 import org.deeplearning4j.berkeley.Pair;
 import org.deeplearning4j.nn.api.Layer;
+import org.deeplearning4j.nn.api.MaskState;
 import org.deeplearning4j.nn.api.Updater;
 import org.deeplearning4j.nn.conf.NeuralNetConfiguration;
 import org.deeplearning4j.nn.conf.layers.variational.CompositeReconstructionDistribution;
@@ -528,7 +529,7 @@ public class VariationalAutoencoder implements Layer {
 
     @Override
     public double calcL2(boolean backpropParamsOnly) {
-        if (!conf.isUseRegularization() || conf.getLayer().getL2() <= 0.0) return 0.0;
+        if (!conf.isUseRegularization()) return 0.0;
 
         double l2Sum = 0.0;
         for (Map.Entry<String, INDArray> e : paramTable().entrySet()) {
@@ -546,7 +547,7 @@ public class VariationalAutoencoder implements Layer {
 
     @Override
     public double calcL1(boolean backpropParamsOnly) {
-        if (!conf.isUseRegularization() || conf.getLayer().getL1() <= 0.0) return 0.0;
+        if (!conf.isUseRegularization()) return 0.0;
 
         double l1Sum = 0.0;
         for (Map.Entry<String, INDArray> e : paramTable().entrySet()) {
@@ -831,6 +832,13 @@ public class VariationalAutoencoder implements Layer {
     @Override
     public boolean isPretrainLayer() {
         return true;
+    }
+
+    @Override
+    public Pair<INDArray, MaskState> feedForwardMaskArray(INDArray maskArray, MaskState currentMaskState, int minibatchSize) {
+
+
+        throw new UnsupportedOperationException("Not yet implemented");
     }
 
 

@@ -12,6 +12,8 @@ import org.deeplearning4j.nn.graph.ComputationGraph;
 import org.deeplearning4j.nn.multilayer.MultiLayerNetwork;
 import org.deeplearning4j.nn.updater.UpdaterCreator;
 import org.deeplearning4j.nn.updater.graph.ComputationGraphUpdater;
+import org.nd4j.linalg.activations.Activation;
+import org.nd4j.linalg.activations.IActivation;
 import org.nd4j.linalg.api.ndarray.INDArray;
 import org.nd4j.linalg.dataset.DataSet;
 import org.nd4j.linalg.dataset.MultiDataSet;
@@ -20,6 +22,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -41,6 +44,17 @@ import java.util.Map;
 public class GradientCheckUtil {
 
     private static Logger log = LoggerFactory.getLogger(GradientCheckUtil.class);
+
+    private static final List<Class<? extends IActivation>> VALID_ACTIVATION_FUNCTIONS = Arrays.asList(
+            Activation.CUBE.getActivationFunction().getClass(),
+            Activation.ELU.getActivationFunction().getClass(),
+            Activation.IDENTITY.getActivationFunction().getClass(),
+            Activation.RATIONALTANH.getActivationFunction().getClass(),
+            Activation.SIGMOID.getActivationFunction().getClass(),
+            Activation.SOFTMAX.getActivationFunction().getClass(),
+            Activation.SOFTPLUS.getActivationFunction().getClass(),
+            Activation.SOFTSIGN.getActivationFunction().getClass(),
+            Activation.TANH.getActivationFunction().getClass());
 
     private GradientCheckUtil() {
     }
@@ -78,10 +92,25 @@ public class GradientCheckUtil {
                 //Must have LR of 1.0
                 double lr = n.getLayer().getLearningRate();
                 if(lr != 1.0){
-                    throw new IllegalStateException("When using SGD updater, must also use lr=1.0 for layer " + layerCount + "; got " + u + " with lr=" + lr);
+                    throw new IllegalStateException("When using SGD updater, must also use lr=1.0 for layer " + layerCount
+                            + "; got " + u + " with lr=" + lr + " for layer \"" + n.getLayer().getLayerName() + "\"");
                 }
             } else if( u != org.deeplearning4j.nn.conf.Updater.NONE ){
                 throw new IllegalStateException("Must have Updater.NONE (or SGD + lr=1.0) for layer " + layerCount + "; got " + u);
+            }
+
+            double dropout = n.getLayer().getDropOut();
+            if( n.isUseRegularization() && dropout != 0.0 ){
+                throw new IllegalStateException("Must have dropout == 0.0 for gradient checks - got dropout = " + dropout + " for layer " + layerCount);
+            }
+
+            IActivation activation = n.getLayer().getActivationFn();
+            if(activation != null){
+                if(!VALID_ACTIVATION_FUNCTIONS.contains(activation.getClass())){
+                    log.warn("Layer " + layerCount + " is possibly using an unsuitable activation function: " + activation.getClass() +
+                            ". Activation functions for gradient checks must be smooth (like sigmoid, tanh, softmax) and not " +
+                            "contain discontinuities like ReLU or LeakyReLU (these may cause spurious failures)");
+                }
             }
         }
 
@@ -219,6 +248,20 @@ public class GradientCheckUtil {
             } else if( u != org.deeplearning4j.nn.conf.Updater.NONE ){
                 throw new IllegalStateException("Must have Updater.NONE (or SGD + lr=1.0) for layer \"" + vertexName + "\"; got " + u);
             }
+
+            double dropout = lv.getLayerConf().getLayer().getDropOut();
+            if( lv.getLayerConf().isUseRegularization() && dropout != 0.0 ){
+                throw new IllegalStateException("Must have dropout == 0.0 for gradient checks - got dropout = " + dropout + " for layer " + layerCount);
+            }
+
+            IActivation activation = lv.getLayerConf().getLayer().getActivationFn();
+            if(activation != null){
+                if(!VALID_ACTIVATION_FUNCTIONS.contains(activation.getClass())){
+                    log.warn("Layer \"" + vertexName + "\" is possibly using an unsuitable activation function: " + activation.getClass() +
+                            ". Activation functions for gradient checks must be smooth (like sigmoid, tanh, softmax) and not " +
+                            "contain discontinuities like ReLU or LeakyReLU (these may cause spurious failures)");
+                }
+            }
         }
 
         for( int i=0; i<inputs.length; i++ ) graph.setInput(i,inputs[i]);
@@ -235,20 +278,35 @@ public class GradientCheckUtil {
 
         int nParams = originalParams.length();
 
+        Map<String,INDArray> paramTable = graph.paramTable();
+        List<String> paramNames = new ArrayList<>(paramTable.keySet());
+        int[] paramEnds = new int[paramNames.size()];
+        paramEnds[0] = paramTable.get(paramNames.get(0)).length();
+        for( int i=1; i<paramEnds.length; i++ ){
+            paramEnds[i] = paramEnds[i-1] + paramTable.get(paramNames.get(i)).length();
+        }
+
+        int currParamNameIdx = 0;
         int totalNFailures = 0;
         double maxError = 0.0;
         MultiDataSet mds = new MultiDataSet(inputs, labels);
         INDArray params = graph.params();     //Assumption here: params is a view that we can modify in-place
         for(int i = 0; i < nParams; i++) {
+            //Get param name
+            if(i >= paramEnds[currParamNameIdx]){
+                currParamNameIdx++;
+            }
+            String paramName = paramNames.get(currParamNameIdx);
+
             //(w+epsilon): Do forward pass and score
             double origValue = params.getDouble(i);
 
             params.putScalar(i, origValue + epsilon);
-            double scorePlus = graph.score(mds);
+            double scorePlus = graph.score(mds, true);  //training == true for batch norm, etc (scores and gradients need to be calculated on same thing)
 
             //(w-epsilon): Do forward pass and score
             params.putScalar(i, origValue - epsilon);
-            double scoreMinus = graph.score(mds);
+            double scoreMinus = graph.score(mds, true);
 
             //Reset original param value
             params.putScalar(i, origValue);
@@ -270,11 +328,11 @@ public class GradientCheckUtil {
             if(relError > maxRelError || Double.isNaN(relError)) {
                 double absError = Math.abs(backpropGradient - numericalGradient);
                 if(absError < minAbsoluteError){
-                    log.info("Param " + i + " passed: grad= " + backpropGradient + ", numericalGrad= " + numericalGradient
+                    log.info("Param " + i + " (" + paramName + ") passed: grad= " + backpropGradient + ", numericalGrad= " + numericalGradient
                             + ", relError= " + relError + "; absolute error = " + absError + " < minAbsoluteError = " + minAbsoluteError );
                 } else {
                     if (print)
-                        log.info("Param " + i + " FAILED: grad= " + backpropGradient + ", numericalGrad= " + numericalGradient
+                        log.info("Param " + i + " (" + paramName + ") FAILED: grad= " + backpropGradient + ", numericalGrad= " + numericalGradient
                                 + ", relError= " + relError + ", scorePlus=" + scorePlus + ", scoreMinus= " + scoreMinus);
                     if (exitOnFirstError)
                         return false;
@@ -282,7 +340,7 @@ public class GradientCheckUtil {
                 }
             }
             else if(print) {
-                log.info("Param " + i + " passed: grad= " + backpropGradient + ", numericalGrad= " + numericalGradient
+                log.info("Param " + i + " (" + paramName + ") passed: grad= " + backpropGradient + ", numericalGrad= " + numericalGradient
                         + ", relError= " + relError );
             }
         }

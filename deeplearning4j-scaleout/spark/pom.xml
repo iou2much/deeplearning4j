@@ -23,8 +23,13 @@
         <version>0.7.3-SNAPSHOT</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
+<<<<<<< HEAD
 
     <artifactId>spark_2.11</artifactId>
+=======
+    <artifactId>spark_2.11</artifactId>
+    <version>0.7.3_spark_1-SNAPSHOT</version>
+>>>>>>> upstream/master
     <packaging>pom</packaging>
 
     <name>org.deeplearning4j.spark</name>
@@ -32,16 +37,42 @@
         <module>dl4j-spark</module>
         <module>dl4j-spark-nlp</module>
         <module>dl4j-spark-parameterserver</module>
+        <module>dl4j-spark-nlp-java8</module>
     </modules>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+        <!-- These Spark version properties have to defined be here, and NOT in the deeplearning4j-parent pom. Otherwise,
+         the properties will be resolved to their defaults (and not the values present during the build). Whereas when
+         defined here (the version is spark 1 vs. 2 specific) we can have different version properties simultaneously
+          (in different pom files) instead of a single global property -->
+        <spark.version>1.6.2</spark.version>
+        <spark.major.version>1</spark.major.version>
+        <datavec.spark.version>0.7.3_spark_${spark.major.version}-SNAPSHOT</datavec.spark.version>
     </properties>
 
 
     <build>
         <plugins>
+            <!-- added source folder containing the code specific to the spark version -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <version>1.12</version>
+                <executions>
+                    <execution>
+                        <id>add-source</id>
+                        <phase>generate-sources</phase>
+                        <goals><goal>add-source</goal></goals>
+                        <configuration>
+                            <sources>
+                                <source>src/main/spark-${spark.major.version}</source>
+                            </sources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.scala-tools</groupId>
                 <artifactId>maven-scala-plugin</artifactId>
@@ -55,17 +86,15 @@
                     </execution>
                 </executions>
                 <configuration>
+<<<<<<< HEAD
                     <scalaVersion>2.11.8</scalaVersion>
+=======
+                    <scalaVersion>2.11.7</scalaVersion>
+>>>>>>> upstream/master
                 </configuration>
             </plugin>
-
-
         </plugins>
     </build>
-
-
-
-
 
     <dependencies>
 
@@ -84,7 +113,11 @@
         <dependency>
             <groupId>org.scala-lang</groupId>
             <artifactId>scala-library</artifactId>
+<<<<<<< HEAD
             <version>2.11.8</version>
+=======
+            <version>2.11.7</version>
+>>>>>>> upstream/master
         </dependency>
         <dependency>
             <groupId>org.apache.spark</groupId>
@@ -101,4 +134,42 @@
 
     </dependencies>
 
+    <profiles>
+        <profile>
+          <id>spark-2</id>
+            <activation>
+                <property>
+                    <name>spark.major.version</name>
+                    <value>2</value>
+                </property>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>com.typesafe.akka</groupId>
+                    <artifactId>akka-remote_2.11</artifactId>
+                    <version>2.3.11</version>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>cdh5</id>
+            <repositories>
+                <repository>
+                    <id>org.apache.hadoop</id>
+                    <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
+                </repository>
+            </repositories>
+            <properties>
+                <hadoop.version>2.0.0-cdh4.6.0</hadoop.version>
+                <spark.version>1.2.0-cdh5.3.0</spark.version>
+            </properties>
+        </profile>
+
+        <profile>
+            <id>test-nd4j-native</id>
+        </profile>
+        <profile>
+            <id>test-nd4j-cuda-8.0</id>
+        </profile>
+    </profiles>
 </project>

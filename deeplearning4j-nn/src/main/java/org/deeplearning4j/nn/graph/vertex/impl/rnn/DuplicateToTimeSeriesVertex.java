@@ -20,6 +20,7 @@ package org.deeplearning4j.nn.graph.vertex.impl.rnn;
 
 import org.deeplearning4j.berkeley.Pair;
 import org.deeplearning4j.nn.api.Layer;
+import org.deeplearning4j.nn.api.MaskState;
 import org.deeplearning4j.nn.gradient.Gradient;
 import org.deeplearning4j.nn.graph.ComputationGraph;
 import org.deeplearning4j.nn.graph.vertex.BaseGraphVertex;
@@ -95,6 +96,17 @@ public class DuplicateToTimeSeriesVertex extends BaseGraphVertex {
     @Override
     public void setBackpropGradientsViewArray(INDArray backpropGradientsViewArray) {
         if(backpropGradientsViewArray != null) throw new RuntimeException("Vertex does not have gradients; gradients view array cannot be set here");
+    }
+
+    @Override
+    public Pair<INDArray, MaskState> feedForwardMaskArrays(INDArray[] maskArrays, MaskState currentMaskState, int minibatchSize) {
+        //Present for all time steps, or as per the corresponding input mask (if present)
+        INDArray[] allMasks = graph.getInputMaskArrays();
+        if(allMasks == null || allMasks[inputVertexIndex] == null){
+            //No mask
+            return null;
+        }
+        return new Pair<>(allMasks[inputVertexIndex], MaskState.Active);
     }
 
     @Override

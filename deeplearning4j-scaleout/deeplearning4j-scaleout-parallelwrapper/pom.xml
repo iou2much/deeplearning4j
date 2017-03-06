@@ -7,7 +7,7 @@
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
-    <artifactId>deeplearning4j-parallel-wrapper</artifactId>
+    <artifactId>deeplearning4j-parallel-wrapper_2.11</artifactId>
     <packaging>jar</packaging>
 
     <name>deeplearning4j-parallel-wrapper</name>
@@ -70,12 +70,6 @@
             <version>${nd4j.version}</version>
         </dependency>
         <dependency>
-            <groupId>org.nd4j</groupId>
-            <artifactId>nd4j-native</artifactId>
-            <version>${project.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
         </dependency>
@@ -87,8 +81,18 @@
 
         <dependency>
             <groupId>org.deeplearning4j</groupId>
-            <artifactId>deeplearning4j-play_2.10</artifactId>
+            <artifactId>deeplearning4j-play_2.11</artifactId>
             <version>${project.version}</version>
         </dependency>
     </dependencies>
+
+    <profiles>
+        <profile>
+            <id>test-nd4j-native</id>
+        </profile>
+        <profile>
+            <id>test-nd4j-cuda-8.0</id>
+        </profile>
+    </profiles>
+
 </project>

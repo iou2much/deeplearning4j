@@ -19,6 +19,8 @@
 package org.deeplearning4j.nn.conf;
 
 
+import org.deeplearning4j.berkeley.Pair;
+import org.deeplearning4j.nn.api.MaskState;
 import org.nd4j.shade.jackson.annotation.JsonSubTypes;
 import org.nd4j.shade.jackson.annotation.JsonTypeInfo;
 import org.deeplearning4j.nn.conf.inputs.InputType;
@@ -44,7 +46,6 @@ import java.io.Serializable;
         @JsonSubTypes.Type(value = RnnToFeedForwardPreProcessor.class, name = "rnnToFeedForward"),
         @JsonSubTypes.Type(value = RnnToCnnPreProcessor.class, name = "rnnToCnn"),
         @JsonSubTypes.Type(value = BinomialSamplingPreProcessor.class, name = "binomialSampling"),
-        @JsonSubTypes.Type(value = ReshapePreProcessor.class, name = "reshape"),
         @JsonSubTypes.Type(value = UnitVarianceProcessor.class, name = "unitVariance"),
         @JsonSubTypes.Type(value = ZeroMeanAndUnitVariancePreProcessor.class, name = "zeroMeanAndUnitVariance"),
         @JsonSubTypes.Type(value = ZeroMeanPrePreProcessor.class, name = "zeroMean"),
@@ -77,4 +78,7 @@ public interface InputPreProcessor extends Serializable, Cloneable {
      * @return             Type of input after applying the preprocessor
      */
     InputType getOutputType(InputType inputType);
+
+
+    Pair<INDArray,MaskState> feedForwardMaskArray(INDArray maskArray, MaskState currentMaskState, int minibatchSize);
 }

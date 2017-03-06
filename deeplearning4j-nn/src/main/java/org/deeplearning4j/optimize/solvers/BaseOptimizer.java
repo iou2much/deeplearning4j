@@ -174,8 +174,7 @@ public abstract class BaseOptimizer implements ConvexOptimizer {
         //validate the input before training
         INDArray gradient;
         INDArray searchDirection;
-        INDArray parameters = null;
-        model.validateInput();
+        INDArray parameters;
         Pair<Gradient,Double> pair = gradientAndScore();
         if(searchState.isEmpty()){
             searchState.put(GRADIENT_KEY, pair.getFirst().gradient());
@@ -224,9 +223,10 @@ public abstract class BaseOptimizer implements ConvexOptimizer {
             //updates searchDirection
             postStep(pair.getFirst().gradient());
 
-            //invoke listeners for debugging
+            //invoke listeners
+            int iterationCount = BaseOptimizer.getIterationCount(model);
             for(IterationListener listener : iterationListeners)
-                listener.iterationDone(model,i);
+                listener.iterationDone(model, iterationCount);
 
             //check for termination conditions based on absolute change in score
             checkTerminalConditions(pair.getFirst().gradient(), oldScore, score, i);

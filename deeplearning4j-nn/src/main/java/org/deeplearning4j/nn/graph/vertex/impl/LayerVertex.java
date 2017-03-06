@@ -21,6 +21,7 @@ package org.deeplearning4j.nn.graph.vertex.impl;
 import lombok.Data;
 import org.deeplearning4j.berkeley.Pair;
 import org.deeplearning4j.nn.api.Layer;
+import org.deeplearning4j.nn.api.MaskState;
 import org.deeplearning4j.nn.api.layers.IOutputLayer;
 import org.deeplearning4j.nn.api.layers.RecurrentLayer;
 import org.deeplearning4j.nn.conf.InputPreProcessor;
@@ -29,6 +30,7 @@ import org.deeplearning4j.nn.graph.ComputationGraph;
 import org.deeplearning4j.nn.graph.vertex.BaseGraphVertex;
 import org.deeplearning4j.nn.graph.vertex.VertexIndices;
 import org.deeplearning4j.nn.layers.BaseOutputLayer;
+import org.deeplearning4j.nn.layers.FrozenLayer;
 import org.nd4j.linalg.api.ndarray.INDArray;
 
 import java.util.Arrays;
@@ -41,7 +43,7 @@ import java.util.Arrays;
 @Data
 public class LayerVertex extends BaseGraphVertex {
 
-    private final Layer layer;
+    private Layer layer;
     private final InputPreProcessor layerPreProcessor;
     //Set outputVertex to true when Layer is an OutputLayer, OR For use in specialized situations like reinforcement learning
     // For RL situations, this Layer insn't an OutputLayer, but is the last layer in a graph, that gets its error/epsilon
@@ -73,6 +75,11 @@ public class LayerVertex extends BaseGraphVertex {
     @Override
     public boolean hasLayer() {
         return true;
+    }
+
+    public void setLayerAsFrozen() {
+        if (this.layer instanceof FrozenLayer) return;
+        this.layer = new FrozenLayer<>(this.layer);
     }
 
     @Override
@@ -136,6 +143,26 @@ public class LayerVertex extends BaseGraphVertex {
         layer.setBackpropGradientsViewArray(backpropGradientsViewArray);
     }
 
+    @Override
+    public Pair<INDArray, MaskState> feedForwardMaskArrays(INDArray[] maskArrays, MaskState currentMaskState, int minibatchSize) {
+        if(maskArrays == null || maskArrays.length == 0){
+            return new Pair<>(null, currentMaskState);
+        }
+
+        if(layerPreProcessor != null ){
+            Pair<INDArray,MaskState> pair = layerPreProcessor.feedForwardMaskArray(maskArrays[0], currentMaskState, minibatchSize);
+            if(pair == null){
+                maskArrays[0] = null;
+                currentMaskState = null;
+            } else {
+                maskArrays[0] = pair.getFirst();
+                currentMaskState = pair.getSecond();
+            }
+        }
+
+        return layer.feedForwardMaskArray(maskArrays[0], currentMaskState, minibatchSize);
+    }
+
 
     @Override
     public String toString() {
@@ -148,7 +175,15 @@ public class LayerVertex extends BaseGraphVertex {
 
     @Override
     public boolean canDoBackward() {
-        if (!isOutputVertex()) return super.canDoBackward();
+        if (!isOutputVertex()) {
+            //inputs to frozen layer go unchecked, so could be null
+            if (getLayer() instanceof FrozenLayer) {
+                return true;
+            }
+            else {
+                return super.canDoBackward();
+            }
+        }
 
         for (INDArray input : inputs) {
             if (input == null) {

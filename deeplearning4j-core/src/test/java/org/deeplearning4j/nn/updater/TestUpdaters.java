@@ -17,6 +17,7 @@ import org.deeplearning4j.nn.params.PretrainParamInitializer;
 import org.deeplearning4j.nn.weights.WeightInit;
 import org.junit.Before;
 import org.junit.Test;
+import org.nd4j.linalg.activations.Activation;
 import org.nd4j.linalg.api.ndarray.INDArray;
 import org.nd4j.linalg.factory.Nd4j;
 import org.nd4j.linalg.learning.*;
@@ -409,13 +410,12 @@ public class TestUpdaters {
         uArr[0] = new LayerUpdater();
         uArr[1] = new LayerUpdater();
         uArr[2] = new LayerUpdater();
-        int updaterStateSize = uArr[2].stateSizeForLayer(net.getLayer(2));
-        INDArray updaterState = Nd4j.create(1, updaterStateSize);
+        INDArray updaterState = Nd4j.create(1,6*7 + 7, 'f');
         uArr[2].setStateViewArray(net.getLayer(2), updaterState, true);
 
         uArr[3] = new LayerUpdater();
-        updaterStateSize = uArr[3].stateSizeForLayer(net.getLayer(3));
-        updaterState = Nd4j.create(1, updaterStateSize);
+//        updaterStateSize = uArr[3].stateSizeForLayer(net.getLayer(3));
+        updaterState = Nd4j.create(1,7*8+8, 'f');
         uArr[3].setStateViewArray(net.getLayer(3), updaterState, true);
 
         int[] nIns = {4, 5, 6, 7};
@@ -427,7 +427,7 @@ public class TestUpdaters {
 
             for (int j = 0; j < net.getnLayers(); j++) {
                 //Generate test gradient:
-                INDArray wGrad = Nd4j.rand(1, nIns[j]*nOuts[j]);
+                INDArray wGrad = Nd4j.rand(nIns[j], nOuts[j]);
                 INDArray bGrad = Nd4j.rand(1, nOuts[j]);
 
                 String wKey = j + "_" + DefaultParamInitializer.WEIGHT_KEY;
@@ -600,7 +600,7 @@ public class TestUpdaters {
                 .layer(
                         new org.deeplearning4j.nn.conf.layers.RBM.Builder()
                                 .lossFunction(LossFunctions.LossFunction.COSINE_PROXIMITY)
-                                .activation("identity").updater(org.deeplearning4j.nn.conf.Updater.SGD)
+                                .activation(Activation.IDENTITY).updater(org.deeplearning4j.nn.conf.Updater.SGD)
                                 .nIn(nIn).nOut(nOut).build())
                 .build();
         int numParams = conf.getLayer().initializer().numParams(conf);
@@ -633,7 +633,42 @@ public class TestUpdaters {
             assertEquals(gradExpected, gradient.getGradientFor(entry.getKey()));
         }
         assertEquals(lr, layer.conf().getLayer().getLearningRate(), 1e-4);
+    }
+
+    @Test
+    public void testEpsilonAllUpdaters(){
+
+        double e = 7e-2;
+        MultiLayerConfiguration conf = new NeuralNetConfiguration.Builder()
+                .epsilon(e)
+                .list()
+                .layer(0, new DenseLayer.Builder().nIn(2).nOut(2).updater(org.deeplearning4j.nn.conf.Updater.ADAM).build())
+                .layer(1, new DenseLayer.Builder().nIn(2).nOut(2).updater(org.deeplearning4j.nn.conf.Updater.RMSPROP).build())
+                .layer(2, new DenseLayer.Builder().nIn(2).nOut(2).updater(org.deeplearning4j.nn.conf.Updater.ADADELTA).build())
+                .layer(3, new DenseLayer.Builder().nIn(2).nOut(2).updater(org.deeplearning4j.nn.conf.Updater.ADAGRAD).build())
+                .build();
+
+        MultiLayerNetwork net = new MultiLayerNetwork(conf);
+        net.init();
 
 
+        MultiLayerUpdater updater = (MultiLayerUpdater)net.getUpdater();
+        Updater[] updaters = updater.getLayerUpdaters();
+
+        LayerUpdater u0 = (LayerUpdater) updaters[0];
+        Adam adam = (Adam) u0.updaterForVariable.get("W");
+        assertEquals(e, adam.getEpsilon(), 0.0);
+
+        LayerUpdater u1 = (LayerUpdater) updaters[1];
+        RmsProp rmsProp = (RmsProp) u1.updaterForVariable.get("W");
+        assertEquals(e, rmsProp.getEpsilon(), 0.0);
+
+        LayerUpdater u2 = (LayerUpdater) updaters[2];
+        AdaDelta adaDelta = (AdaDelta) u2.updaterForVariable.get("W");
+        assertEquals(e, adaDelta.getEpsilon(), 0.0);
+
+        LayerUpdater u3 = (LayerUpdater) updaters[3];
+        AdaGrad adaGrad = (AdaGrad) u3.updaterForVariable.get("W");
+        assertEquals(e, adaGrad.getEpsilon(), 0.0);
     }
 }

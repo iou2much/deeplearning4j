@@ -33,28 +33,34 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.LockSupport;
 
 /**
  * This is simple data-parallel wrapper
  * suitable for multi-cpu/multi-gpu environments.
  *
+ * PLEASE NOTE: This implementation is NOT NUMA-aware.
+ *
  * @author raver119@gmail.com
  */
+// TODO: We want this thing to be NUMA-aware in foreseable future
 @Slf4j
 public class ParallelWrapper implements AutoCloseable {
-    private Model model;
-    private int workers = 2;
-    private int prefetchSize = 2;
-    private int averagingFrequency = 1;
-    private Trainer zoo[];
-    private AtomicLong iterationsCounter = new AtomicLong(0);
-    private boolean reportScore = false;
-    private boolean averageUpdaters = true;
-    private boolean legacyAveraging = false;
-    private boolean wasAveraged = false;
-    private AtomicBoolean stopFit = new AtomicBoolean(false);
-    private List<IterationListener> listeners = new ArrayList<>();
-    private StatsStorageRouter storageRouter;
+    protected Model model;
+    protected int workers = 2;
+    protected int prefetchSize = 2;
+    protected int averagingFrequency = 1;
+    protected Trainer zoo[];
+    protected AtomicLong iterationsCounter = new AtomicLong(0);
+    protected boolean reportScore = false;
+    protected boolean averageUpdaters = true;
+    protected boolean legacyAveraging = false;
+    protected boolean wasAveraged = false;
+    protected AtomicBoolean stopFit = new AtomicBoolean(false);
+    protected List<IterationListener> listeners = new ArrayList<>();
+    protected StatsStorageRouter storageRouter;
+    protected boolean isMQ;
+
     // log uncaught exceptions
     Thread.UncaughtExceptionHandler handler = new Thread.UncaughtExceptionHandler() {
         public void uncaughtException(Thread th, Throwable ex) {
@@ -120,7 +126,7 @@ public class ParallelWrapper implements AutoCloseable {
             zoo = new Trainer[workers];
             for (int cnt = 0; cnt < workers; cnt++) {
                 // we pass true here, to tell Trainer to use MultiDataSet queue for training
-                zoo[cnt] = new Trainer(cnt, model, true);
+                zoo[cnt] = new Trainer(cnt, model, Nd4j.getAffinityManager().getDeviceForCurrentThread(), true);
                 zoo[cnt].setUncaughtExceptionHandler(handler);
                 zoo[cnt].start();
             }
@@ -168,63 +174,11 @@ public class ParallelWrapper implements AutoCloseable {
                     average model, and propagate it to whole
                 */
                 if (iterationsCounter.get() % averagingFrequency == 0 && pos + 1 == workers) {
-                    wasAveraged = true;
-                    double score = 0.0;
-                    if (!legacyAveraging || Nd4j.getAffinityManager().getNumberOfDevices() == 1) {
-                        List<INDArray> params = new ArrayList<>();
-                        for (int cnt = 0; cnt < workers && cnt < locker.get(); cnt++) {
-                            params.add(zoo[cnt].getModel().params());
-                            score += zoo[cnt].getModel().score();
-                        }
-                        Nd4j.averageAndPropagate(model.params(), params);
-                    } else {
-                        INDArray params = Nd4j.zeros(model.params().shape());
-                        int cnt = 0;
-                        for (; cnt < workers && cnt < locker.get(); cnt++) {
-                            params.addi(zoo[cnt].getModel().params());
-                            score += zoo[cnt].getModel().score();
-                        }
-
-                        params.divi(cnt);
-                        model.setParams(params);
-                    }
-
-                    score /= Math.min(workers, locker.get());
-
-                    // TODO: improve this
-                    if (reportScore)
-                        log.info("Averaged score: " + score);
+                    double score = getScore(locker);
 
                     // averaging updaters state
                     if (model instanceof ComputationGraph) {
-                        if (averageUpdaters) {
-                            ComputationGraphUpdater updater = ((ComputationGraph) model).getUpdater();
-                            int batchSize = 0;
-
-                            if (updater != null && updater.getStateViewArray() != null) {
-                                if (!legacyAveraging || Nd4j.getAffinityManager().getNumberOfDevices() == 1) {
-                                    List<INDArray> updaters = new ArrayList<>();
-                                    for (int cnt = 0; cnt < workers && cnt < locker.get(); cnt++) {
-                                        ComputationGraph workerModel = (ComputationGraph) zoo[cnt].getModel();
-                                        updaters.add(workerModel.getUpdater().getStateViewArray());
-                                        batchSize += workerModel.batchSize();
-                                    }
-                                    Nd4j.averageAndPropagate(updater.getStateViewArray(), updaters);
-                                } else {
-                                    INDArray state = Nd4j.zeros(updater.getStateViewArray().shape());
-                                    int cnt = 0;
-                                    for (; cnt < workers && cnt < locker.get(); cnt++) {
-                                        ComputationGraph workerModel = (ComputationGraph) zoo[cnt].getModel();
-                                        state.addi(workerModel.getUpdater().getStateViewArray());
-                                        batchSize += workerModel.batchSize();
-                                    }
-                                    state.divi(cnt);
-                                    updater.setStateViewArray(state);
-                                }
-                            }
-                        }
-
-                        ((ComputationGraph) model).setScore(score);
+                        averageUpdatersState(locker, score);
                     } else throw new RuntimeException("MultiDataSet must only be used with ComputationGraph model");
 
                     if (legacyAveraging &&  Nd4j.getAffinityManager().getNumberOfDevices() > 1) {
@@ -246,7 +200,66 @@ public class ParallelWrapper implements AutoCloseable {
 //        iterationsCounter.set(0);
     }
 
+    private double getScore(AtomicInteger locker) {
+        wasAveraged = true;
+        double score = 0.0;
+        if (!legacyAveraging || Nd4j.getAffinityManager().getNumberOfDevices() == 1) {
+            List<INDArray> params = new ArrayList<>();
+            for (int cnt = 0; cnt < workers && cnt < locker.get(); cnt++) {
+                params.add(zoo[cnt].getModel().params());
+                score += zoo[cnt].getModel().score();
+            }
+            Nd4j.averageAndPropagate(model.params(), params);
+        } else {
+            INDArray params = Nd4j.zeros(model.params().shape());
+            int cnt = 0;
+            for (; cnt < workers && cnt < locker.get(); cnt++) {
+                params.addi(zoo[cnt].getModel().params());
+                score += zoo[cnt].getModel().score();
+            }
 
+            params.divi(cnt);
+            model.setParams(params);
+        }
+
+        score /= Math.min(workers, locker.get());
+
+        // TODO: improve this
+        if (reportScore)
+            log.info("Averaged score: " + score);
+        return score;
+    }
+
+    private void averageUpdatersState(AtomicInteger locker, double score) {
+        if (averageUpdaters) {
+            ComputationGraphUpdater updater = ((ComputationGraph) model).getUpdater();
+            int batchSize = 0;
+
+            if (updater != null && updater.getStateViewArray() != null) {
+                if (!legacyAveraging || Nd4j.getAffinityManager().getNumberOfDevices() == 1) {
+                    List<INDArray> updaters = new ArrayList<>();
+                    for (int cnt = 0; cnt < workers && cnt < locker.get(); cnt++) {
+                        ComputationGraph workerModel = (ComputationGraph) zoo[cnt].getModel();
+                        updaters.add(workerModel.getUpdater().getStateViewArray());
+                        batchSize += workerModel.batchSize();
+                    }
+                    Nd4j.averageAndPropagate(updater.getStateViewArray(), updaters);
+                } else {
+                    INDArray state = Nd4j.zeros(updater.getStateViewArray().shape());
+                    int cnt = 0;
+                    for (; cnt < workers && cnt < locker.get(); cnt++) {
+                        ComputationGraph workerModel = (ComputationGraph) zoo[cnt].getModel();
+                        state.addi(workerModel.getUpdater().getStateViewArray());
+                        batchSize += workerModel.batchSize();
+                    }
+                    state.divi(cnt);
+                    updater.setStateViewArray(state);
+                }
+            }
+        }
+
+        ((ComputationGraph) model).setScore(score);
+    }
 
 
     /**
@@ -324,7 +337,7 @@ public class ParallelWrapper implements AutoCloseable {
         if (zoo == null) {
             zoo = new Trainer[workers];
             for (int cnt = 0; cnt < workers; cnt++) {
-                zoo[cnt] = new Trainer(cnt, model);
+                zoo[cnt] = new Trainer(cnt, model, Nd4j.getAffinityManager().getDeviceForCurrentThread());
                 zoo[cnt].setUncaughtExceptionHandler(handler);
                 zoo[cnt].start();
             }
@@ -333,7 +346,13 @@ public class ParallelWrapper implements AutoCloseable {
 
         DataSetIterator iterator;
         if (prefetchSize > 0 && source.asyncSupported()) {
-            iterator = new AsyncDataSetIterator(source, prefetchSize);
+            if (isMQ) {
+                if (workers % Nd4j.getAffinityManager().getNumberOfDevices() != 0)
+                    log.warn("Number of workers [{}] isn't optimal for available devices [{}]", workers, Nd4j.getAffinityManager().getNumberOfDevices());
+
+                MagicQueue queue = new MagicQueue.Builder().setCapacityPerFlow(8).setMode(MagicQueue.Mode.SEQUENTIAL).setNumberOfBuckets(Nd4j.getAffinityManager().getNumberOfDevices()).build();
+                iterator = new AsyncDataSetIterator(source, prefetchSize, queue);
+            } else iterator = new AsyncDataSetIterator(source, prefetchSize);
         } else iterator = source;
 
         AtomicInteger locker = new AtomicInteger(0);
@@ -370,31 +389,7 @@ public class ParallelWrapper implements AutoCloseable {
                     average model, and propagate it to whole
                 */
                 if (iterationsCounter.get() % averagingFrequency == 0 && pos + 1 == workers) {
-                    wasAveraged = true;
-                    double score = 0.0;
-                    if (!legacyAveraging || Nd4j.getAffinityManager().getNumberOfDevices() == 1) {
-                        List<INDArray> params = new ArrayList<>();
-                        for (int cnt = 0; cnt < workers && cnt < locker.get(); cnt++) {
-                            params.add(zoo[cnt].getModel().params());
-                            score += zoo[cnt].getModel().score();
-                        }
-                        Nd4j.averageAndPropagate(model.params(), params);
-                    } else {
-                        INDArray params = Nd4j.zeros(model.params().shape());
-                        int cnt = 0;
-                        for (; cnt < workers && cnt < locker.get(); cnt++) {
-                            params.addi(zoo[cnt].getModel().params());
-                            score += zoo[cnt].getModel().score();
-                        }
-                        params.divi(cnt);
-                        model.setParams(params);
-                    }
-
-                    score /= Math.min(workers, locker.get());
-
-                    // TODO: improve this
-                    if (reportScore)
-                        log.info("Averaged score: " + score);
+                    double score = getScore(locker);
 
                     // averaging updaters state
                     if (model instanceof MultiLayerNetwork) {
@@ -427,34 +422,7 @@ public class ParallelWrapper implements AutoCloseable {
 
                         ((MultiLayerNetwork) model).setScore(score);
                     } else if (model instanceof ComputationGraph) {
-                        if (averageUpdaters) {
-                            ComputationGraphUpdater updater = ((ComputationGraph) model).getUpdater();
-                            int batchSize = 0;
-
-                            if (updater != null && updater.getStateViewArray() != null) {
-                                if (!legacyAveraging || Nd4j.getAffinityManager().getNumberOfDevices() == 1) {
-                                    List<INDArray> updaters = new ArrayList<>();
-                                    for (int cnt = 0; cnt < workers && cnt < locker.get(); cnt++) {
-                                        ComputationGraph workerModel = (ComputationGraph) zoo[cnt].getModel();
-                                        updaters.add(workerModel.getUpdater().getStateViewArray());
-                                        batchSize += workerModel.batchSize();
-                                    }
-                                    Nd4j.averageAndPropagate(updater.getStateViewArray(), updaters);
-                                } else {
-                                    INDArray state = Nd4j.zeros(updater.getStateViewArray().shape());
-                                    int cnt = 0;
-                                    for (; cnt < workers && cnt < locker.get(); cnt++) {
-                                        ComputationGraph workerModel = (ComputationGraph) zoo[cnt].getModel();
-                                        state.addi(workerModel.getUpdater().getStateViewArray());
-                                        batchSize += workerModel.batchSize();
-                                    }
-                                    state.divi(cnt);
-                                    updater.setStateViewArray(state);
-                                }
-                            }
-                        }
-
-                        ((ComputationGraph) model).setScore(score);
+                        averageUpdatersState(locker, score);
                     }
 
                     if (legacyAveraging &&  Nd4j.getAffinityManager().getNumberOfDevices() > 1) {
@@ -477,13 +445,14 @@ public class ParallelWrapper implements AutoCloseable {
     }
 
     public static class Builder<T extends Model> {
-        private T model;
-        private int workers = 2;
-        private int prefetchSize = 16;
-        private int averagingFrequency = 1;
-        private boolean reportScore = false;
-        private boolean averageUpdaters = true;
-        private boolean legacyAveraging = true;
+        protected T model;
+        protected int workers = Nd4j.getAffinityManager().getNumberOfDevices();
+        protected int prefetchSize = 16;
+        protected int averagingFrequency = 1;
+        protected boolean reportScore = false;
+        protected boolean averageUpdaters = true;
+        protected boolean legacyAveraging = true;
+        protected boolean isMQ = false; // Nd4j.getAffinityManager().getNumberOfDevices() > 1;
 
         /**
          * Build ParallelWrapper for MultiLayerNetwork
@@ -531,6 +500,21 @@ public class ParallelWrapper implements AutoCloseable {
          */
         public Builder averageUpdaters(boolean reallyAverage) {
             this.averageUpdaters = reallyAverage;
+            return this;
+        }
+
+        /**
+         * This method enables/disable MagicQueue use
+         * If set to true, all datasets will be spread among all available devices at prefetch phase using AsyncDataSetIterator
+         *
+         * PLEASE NOTE: This is experimental feature.
+         *
+         * Default: false
+         * @param reallyUse
+         * @return
+         */
+        public Builder useMQ(boolean reallyUse) {
+            this.isMQ = reallyUse;
             return this;
         }
 
@@ -589,6 +573,7 @@ public class ParallelWrapper implements AutoCloseable {
             wrapper.reportScore = this.reportScore;
             wrapper.averageUpdaters = this.averageUpdaters;
             wrapper.legacyAveraging = this.legacyAveraging;
+            wrapper.isMQ = this.isMQ;
 
             return wrapper;
         }
@@ -606,24 +591,31 @@ public class ParallelWrapper implements AutoCloseable {
         private Exception thrownException;
         private volatile boolean useMDS = false;
         private final String uuid = UUID.randomUUID().toString();
+        private boolean onRootModel = false;
 
 
-        public Trainer(int threadId, Model model, boolean useMDS) {
-            this(threadId, model);
+
+        public Trainer(int threadId, Model model, int rootDevice, boolean useMDS) {
+            this(threadId, model, rootDevice);
             this.useMDS = useMDS;
         }
 
-        public Trainer(int threadId, Model model) {
+        public Trainer(int threadId, Model model, int rootDevice) {
             this.threadId = threadId;
             this.setDaemon(true);
             this.setName("ParallelWrapper trainer " + threadId);
 
             this.originalModel = model;
-            if (model instanceof MultiLayerNetwork) {
-                this.replicatedModel = ((MultiLayerNetwork) model).clone();
+            if (rootDevice != threadId) {
+                if (model instanceof MultiLayerNetwork) {
+                    this.replicatedModel = ((MultiLayerNetwork) model).clone();
 
-            } else if (model instanceof ComputationGraph) {
-                this.replicatedModel = ((ComputationGraph) model).clone();
+                } else if (model instanceof ComputationGraph) {
+                    this.replicatedModel = ((ComputationGraph) model).clone();
+                }
+            } else {
+                this.onRootModel = true;
+                this.replicatedModel = model;
             }
         }
 
@@ -699,46 +691,50 @@ public class ParallelWrapper implements AutoCloseable {
                 // we create fresh network, with the same configuration, as initially created by user
                 // however, we don't need clone or anything here
                 if (originalModel instanceof MultiLayerNetwork) {
-                    MultiLayerConfiguration conf = ((MultiLayerNetwork) originalModel).getLayerWiseConfigurations().clone();
-                    this.replicatedModel = new MultiLayerNetwork(conf);
+                    if (!onRootModel) {
+                        MultiLayerConfiguration conf = ((MultiLayerNetwork) originalModel).getLayerWiseConfigurations().clone();
+                        this.replicatedModel = new MultiLayerNetwork(conf);
 
-                    ((MultiLayerNetwork) replicatedModel).init();
-                    Collection<IterationListener> oldListeners = ((MultiLayerNetwork) originalModel).getListeners();
-                    Collection<IterationListener> replicatedListeners = new ArrayList<>();
+                        ((MultiLayerNetwork) replicatedModel).init();
+                        Collection<IterationListener> oldListeners = ((MultiLayerNetwork) originalModel).getListeners();
+                        Collection<IterationListener> replicatedListeners = new ArrayList<>();
 
-                    for(IterationListener listener : oldListeners) {
-                        if(listener instanceof RoutingIterationListener) {
-                            RoutingIterationListener routingListener = ((RoutingIterationListener) listener).clone();
-                            routingListener.setSessionID(((RoutingIterationListener) listener).getSessionID());
-                            routingListener.setWorkerID(uuid);
-                            routingListener.setStorageRouter(ParallelWrapper.this.storageRouter);
-                            replicatedListeners.add(routingListener);
-                        } else {
-                            replicatedListeners.add(listener);
+                        for (IterationListener listener : oldListeners) {
+                            if (listener instanceof RoutingIterationListener) {
+                                RoutingIterationListener routingListener = ((RoutingIterationListener) listener).clone();
+                                routingListener.setSessionID(((RoutingIterationListener) listener).getSessionID());
+                                routingListener.setWorkerID(uuid);
+                                routingListener.setStorageRouter(ParallelWrapper.this.storageRouter);
+                                replicatedListeners.add(routingListener);
+                            } else {
+                                replicatedListeners.add(listener);
+                            }
                         }
-                    }
 
-                    ((MultiLayerNetwork)this.replicatedModel).setListeners(replicatedListeners);
+                        ((MultiLayerNetwork) this.replicatedModel).setListeners(replicatedListeners);
+                    }
                 } else if (originalModel instanceof ComputationGraph) {
-                    this.replicatedModel = new ComputationGraph(((ComputationGraph) originalModel).getConfiguration().clone());
+                    if (!onRootModel) {
+                        this.replicatedModel = new ComputationGraph(((ComputationGraph) originalModel).getConfiguration().clone());
 
-                    ((ComputationGraph) this.replicatedModel).init();
-                    Collection<IterationListener> oldListeners = ((ComputationGraph) originalModel).getListeners();
-                    Collection<IterationListener> replicatedListeners = new ArrayList<>();
+                        ((ComputationGraph) this.replicatedModel).init();
+                        Collection<IterationListener> oldListeners = ((ComputationGraph) originalModel).getListeners();
+                        Collection<IterationListener> replicatedListeners = new ArrayList<>();
 
-                    for(IterationListener listener : oldListeners) {
-                        if(listener instanceof RoutingIterationListener) {
-                            RoutingIterationListener routingIterationListener = ((RoutingIterationListener) listener).clone();
-                            routingIterationListener.setSessionID(((RoutingIterationListener) listener).getSessionID());
-                            routingIterationListener.setWorkerID(uuid);
-                            routingIterationListener.setStorageRouter(ParallelWrapper.this.storageRouter);
-                            replicatedListeners.add(routingIterationListener);
-                        } else {
-                            replicatedListeners.add(listener);
+                        for (IterationListener listener : oldListeners) {
+                            if (listener instanceof RoutingIterationListener) {
+                                RoutingIterationListener routingIterationListener = ((RoutingIterationListener) listener).clone();
+                                routingIterationListener.setSessionID(((RoutingIterationListener) listener).getSessionID());
+                                routingIterationListener.setWorkerID(uuid);
+                                routingIterationListener.setStorageRouter(ParallelWrapper.this.storageRouter);
+                                replicatedListeners.add(routingIterationListener);
+                            } else {
+                                replicatedListeners.add(listener);
+                            }
                         }
-                    }
 
-                    ((ComputationGraph)this.replicatedModel).setListeners(replicatedListeners);
+                        ((ComputationGraph) this.replicatedModel).setListeners(replicatedListeners);
+                    }
                 }
 
                 if (!useMDS) {
@@ -785,11 +781,7 @@ public class ParallelWrapper implements AutoCloseable {
                 if (thrownException != null)
                     throw new RuntimeException(thrownException);
 
-                try {
-                    Thread.sleep(10);
-                } catch (Exception e) {
-                    ;
-                }
+                LockSupport.parkNanos(50000L);
             }
         }
     }

@@ -94,11 +94,18 @@ public class TfidfVectorizer extends BaseTextVectorizer {
      */
     @Override
     public INDArray transform(String text) {
-        INDArray ret = Nd4j.create(1, vocabCache.numWords());
         Tokenizer tokenizer = tokenizerFactory.create(text);
         List<String> tokens = tokenizer.getTokens();
 
         // build document words count
+        return transform(tokens);
+    }
+
+
+    @Override
+    public INDArray transform(List<String> tokens) {
+        INDArray ret = Nd4j.create(1, vocabCache.numWords());
+
         Map<String, AtomicLong> counts = new HashMap<>();
         for (String token: tokens) {
             if (!counts.containsKey(token))
@@ -118,9 +125,7 @@ public class TfidfVectorizer extends BaseTextVectorizer {
         return ret;
     }
 
-
-
-    private double tfidfWord(String word, long wordCount, long documentLength) {
+    public double tfidfWord(String word, long wordCount, long documentLength) {
         //log.info("word: {}; TF: {}; IDF: {}", word, tfForWord(wordCount, documentLength), idfForWord(word));
         return MathUtils.tfidf(tfForWord(wordCount, documentLength),idfForWord(word));
     }
@@ -150,9 +155,15 @@ public class TfidfVectorizer extends BaseTextVectorizer {
         protected int minWordFrequency;
         protected VocabCache<VocabWord> vocabCache;
         protected LabelsSource labelsSource = new LabelsSource();
-        protected List<String> stopWords = new ArrayList<>();
+        protected Collection<String> stopWords = new ArrayList<>();
+        protected boolean isParallel = true;
 
         public Builder() {
+        }
+
+        public Builder allowParallelTokenization(boolean reallyAllow) {
+            this.isParallel = reallyAllow;
+            return this;
         }
 
         public Builder setTokenizerFactory(@NonNull TokenizerFactory tokenizerFactory) {
@@ -186,7 +197,7 @@ public class TfidfVectorizer extends BaseTextVectorizer {
         }
 
         public Builder setStopWords(Collection<String> stopWords) {
-
+        	this.stopWords = stopWords;
             return this;
         }
 
@@ -197,12 +208,14 @@ public class TfidfVectorizer extends BaseTextVectorizer {
             vectorizer.iterator = this.iterator;
             vectorizer.minWordFrequency = this.minWordFrequency;
             vectorizer.labelsSource = this.labelsSource;
+            vectorizer.isParallel = this.isParallel;
 
             if (this.vocabCache == null) {
                 this.vocabCache = new AbstractCache.Builder<VocabWord>().build();
             }
 
             vectorizer.vocabCache = this.vocabCache;
+            vectorizer.stopWords = this.stopWords;
 
             return vectorizer;
         }

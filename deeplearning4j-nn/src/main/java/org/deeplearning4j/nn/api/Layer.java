@@ -34,7 +34,7 @@ import java.util.Collection;
  *
  * @author Adam Gibson
  */
-public interface Layer extends Serializable,Cloneable,Model {
+public interface Layer extends Serializable, Cloneable, Model {
 
     enum Type {
        FEED_FORWARD,RECURRENT,CONVOLUTIONAL,SUBSAMPLING,RECURSIVE,MULTILAYER,NORMALIZATION
@@ -80,7 +80,9 @@ public interface Layer extends Serializable,Cloneable,Model {
      *              This is on the user to initialize.
      * @return the gradient wrt the parameters
      * on the current layer
+     * @deprecated As of 0.7.3 - Feb 2017. No longer used.
      */
+    @Deprecated
     Gradient error(INDArray input);
 
 
@@ -90,7 +92,9 @@ public interface Layer extends Serializable,Cloneable,Model {
      * based on the activation
      * @param input the input to take the derivative of
      * @return the derivative of the action
+     * @deprecated As of 0.7.3 - Feb 2017. No longer used.
      */
+    @Deprecated
     INDArray derivativeActivation(INDArray input);
 
 
@@ -99,7 +103,9 @@ public interface Layer extends Serializable,Cloneable,Model {
      * @param layerError the layer error
      * @param indArray
      * @return the gradient
+     * @deprecated As of 0.7.3 - Feb 2017. No longer used.
      */
+    @Deprecated
     Gradient calcGradient(Gradient layerError, INDArray indArray);
 
 
@@ -117,7 +123,9 @@ public interface Layer extends Serializable,Cloneable,Model {
      * Parameter averaging
      * @param layer the layer to merge
      * @param batchSize the batch size to merge on
+     * @deprecated As of 0.7.3 - Feb 2017. No longer used. Merging (for parameter averaging) done via alternative means
      */
+    @Deprecated
     void merge(Layer layer, int batchSize);
 
 
@@ -125,7 +133,9 @@ public interface Layer extends Serializable,Cloneable,Model {
      * Calculate the mean representation
      * for the activation for this layer
      * @return the activation mean for this layer
+     * @deprecated As of 0.7.3 - Feb 2017. No longer used.
      */
+    @Deprecated
     INDArray activationMean();
 
     /**
@@ -264,7 +274,11 @@ public interface Layer extends Serializable,Cloneable,Model {
      */
     int getInputMiniBatchSize();
 
-
+    /**
+     * Set the mask array. Note: In general, {@link #feedForwardMaskArray(INDArray, MaskState, int)} should be used in
+     * preference to this.
+     * @param maskArray Mask array to set
+     */
     void setMaskArray(INDArray maskArray);
 
 
@@ -276,4 +290,21 @@ public interface Layer extends Serializable,Cloneable,Model {
      * @return true if the layer can be pretrained (using fit(INDArray), false otherwise
      */
     boolean isPretrainLayer();
+
+
+    /**
+     * Feed forward the input mask array, setting in in the layer as appropriate. This allows different layers to
+     * handle masks differently - for example, bidirectional RNNs and normal RNNs operate differently with masks (the
+     * former sets activations to 0 outside of the data present region (and keeps the mask active for future layers like
+     * dense layers), whereas normal RNNs don't zero out the activations/errors )instead relying on backpropagated error
+     * arrays to handle the variable length case.<br>
+     * This is also used for example for networks that contain global pooling layers, arbitrary preprocessors, etc.
+     *
+     * @param maskArray        Mask array to set
+     * @param currentMaskState Current state of the mask - see {@link MaskState}
+     * @param minibatchSize    Current minibatch size. Needs to be known as it cannot always be inferred from the activations
+     *                         array due to reshaping (such as a DenseLayer within a recurrent neural network)
+     * @return                 New mask array after this layer, along with the new mask state.
+     */
+    Pair<INDArray,MaskState> feedForwardMaskArray(INDArray maskArray, MaskState currentMaskState, int minibatchSize);
 }

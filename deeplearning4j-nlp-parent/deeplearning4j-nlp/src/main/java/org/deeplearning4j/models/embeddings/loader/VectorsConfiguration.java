@@ -10,6 +10,7 @@ import org.apache.commons.codec.binary.Base64;
 import java.io.IOException;
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 
 /**
@@ -40,6 +41,8 @@ public class VectorsConfiguration implements Serializable {
     private int[] variableWindows;
 
     private boolean hugeModelExpected = false;
+    private boolean useUnknown = false;
+
     private int scavengerActivationThreshold = 2000000;
     private int scavengerRetentionDelay = 3;
 
@@ -50,16 +53,20 @@ public class VectorsConfiguration implements Serializable {
     private String tokenizerFactory;
     private String tokenPreProcessor;
 
+    // this is one-off configuration value specially for NGramTokenizerFactory
+    private int nGram;
+
     private String UNK = "UNK";
     private String STOP = "STOP";
 
-    private List<String> stopList = new ArrayList<>();
+    private Collection<String> stopList = new ArrayList<>();
 
     // overall model info
     private int vocabSize;
 
     // paravec-specific option
     private boolean trainElementsVectors = true;
+    private boolean trainSequenceVectors = true;
     private boolean allowParallelTokenization = false;
     private boolean preciseWeightInit = false;
 

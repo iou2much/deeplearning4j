@@ -8,6 +8,7 @@ import org.deeplearning4j.nn.conf.GradientNormalization;
 import org.deeplearning4j.nn.conf.LearningRatePolicy;
 import org.deeplearning4j.nn.conf.NeuralNetConfiguration;
 import org.deeplearning4j.nn.gradient.Gradient;
+import org.deeplearning4j.nn.layers.FrozenLayer;
 import org.deeplearning4j.nn.params.PretrainParamInitializer;
 import org.nd4j.linalg.api.ndarray.INDArray;
 import org.nd4j.linalg.api.ops.impl.accum.Norm2;
@@ -73,6 +74,8 @@ public class LayerUpdater implements Updater {
         String paramName;
         INDArray gradientOrig, gradient2;
         GradientUpdater updater;
+
+        if (layer instanceof FrozenLayer) return;
 
         preApply(layer, gradient, iteration);
         for (Map.Entry<String, INDArray> gradientPair : gradient.gradientForVariable().entrySet()) {
@@ -248,7 +251,8 @@ public class LayerUpdater implements Updater {
                 case ADAM:
                     updater = new Adam(layer.conf().getLearningRateByParam(variable),
                             layer.conf().getLayer().getAdamMeanDecay(),
-                            layer.conf().getLayer().getAdamVarDecay());
+                            layer.conf().getLayer().getAdamVarDecay(),
+                            layer.conf().getLayer().getEpsilon());
                     break;
                 case ADADELTA:
                     updater = new AdaDelta(layer.conf().getLayer().getRho(), layer.conf().getLayer().getEpsilon());
@@ -257,10 +261,13 @@ public class LayerUpdater implements Updater {
                     updater = new Nesterovs(layer.conf().getLayer().getMomentum(), layer.conf().getLearningRateByParam(variable));
                     break;
                 case ADAGRAD:
-                    updater = new AdaGrad(layer.conf().getLearningRateByParam(variable), layer.conf().getLayer().getEpsilon());
+                    updater = new AdaGrad(layer.conf().getLearningRateByParam(variable),
+                            layer.conf().getLayer().getEpsilon());
                     break;
                 case RMSPROP:
-                    updater = new org.nd4j.linalg.learning.RmsProp(layer.conf().getLearningRateByParam(variable), layer.conf().getLayer().getRmsDecay());
+                    updater = new org.nd4j.linalg.learning.RmsProp(layer.conf().getLearningRateByParam(variable),
+                            layer.conf().getLayer().getRmsDecay(),
+                            layer.conf().getLayer().getEpsilon());
                     break;
                 case NONE:
                     updater = new NoOpUpdater();

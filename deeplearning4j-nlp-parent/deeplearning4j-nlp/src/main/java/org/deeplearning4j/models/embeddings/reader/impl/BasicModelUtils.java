@@ -62,9 +62,19 @@ public class BasicModelUtils<T extends SequenceElement> implements ModelUtils<T>
      * @return a normalized similarity (cosine similarity)
      */
     @Override
-    public double similarity( String label1, String label2) {
+    public double similarity(@NonNull String label1, @NonNull String label2) {
         if (label1 == null || label2 == null) {
             log.debug("LABELS: " + label1 + ": " + (label1 == null ? "null": EXISTS)+ ";" + label2 +" vec2:" + (label2 == null ? "null": EXISTS));
+            return Double.NaN;
+        }
+
+        if (!vocabCache.hasToken(label1)) {
+            log.debug("Unknown token 1 requested: [{}]", label1);
+            return Double.NaN;
+        }
+
+        if (!vocabCache.hasToken(label2)) {
+            log.debug("Unknown token 2 requested: [{}]", label2);
             return Double.NaN;
         }
 
@@ -155,7 +165,7 @@ public class BasicModelUtils<T extends SequenceElement> implements ModelUtils<T>
         return ret;
     }
 
-    public Collection<String> wordsNearest(Collection<String> positive, Collection<String> negative, int top) {
+    public Collection<String> wordsNearest(@NonNull Collection<String> positive, @NonNull Collection<String> negative, int top) {
         // Check every word is in the model
         for (String p : SetUtils.union(new HashSet<>(positive), new HashSet<>(negative))) {
             if (!vocabCache.containsWord(p)) {
@@ -176,7 +186,15 @@ public class BasicModelUtils<T extends SequenceElement> implements ModelUtils<T>
 
         INDArray mean = words.isMatrix() ? words.mean(0) : words;
 
-        return wordsNearest(mean, top);
+        Collection<String> tempRes = wordsNearest(mean, top + positive.size() + negative.size());
+        List<String> realResults = new ArrayList<>();
+
+        for (String word: tempRes) {
+            if (!positive.contains(word) && !negative.contains(negative) && realResults.size() < top)
+                realResults.add(word);
+        }
+
+        return realResults;
     }
 
     /**

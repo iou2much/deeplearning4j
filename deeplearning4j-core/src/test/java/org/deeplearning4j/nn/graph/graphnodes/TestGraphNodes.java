@@ -12,11 +12,7 @@ import org.deeplearning4j.nn.conf.preprocessor.CnnToFeedForwardPreProcessor;
 import org.deeplearning4j.nn.gradient.Gradient;
 import org.deeplearning4j.nn.graph.ComputationGraph;
 import org.deeplearning4j.nn.graph.vertex.GraphVertex;
-import org.deeplearning4j.nn.graph.vertex.impl.L2Vertex;
-import org.deeplearning4j.nn.graph.vertex.impl.MergeVertex;
-import org.deeplearning4j.nn.graph.vertex.impl.SubsetVertex;
-import org.deeplearning4j.nn.graph.vertex.impl.StackVertex;
-import org.deeplearning4j.nn.graph.vertex.impl.UnstackVertex;
+import org.deeplearning4j.nn.graph.vertex.impl.*;
 import org.junit.Test;
 import org.nd4j.linalg.api.ndarray.INDArray;
 import org.nd4j.linalg.api.ops.impl.accum.distances.EuclideanDistance;
@@ -259,7 +255,7 @@ public class TestGraphNodes {
         assertEquals(in2, out.get(NDArrayIndex.interval(5,10), NDArrayIndex.all()));
         assertEquals(in3, out.get(NDArrayIndex.interval(10,15), NDArrayIndex.all()));
 
-        unstack.setErrors(out);
+        unstack.setEpsilon(out);
         Pair<Gradient,INDArray[]> b = unstack.doBackward(false);
 
         assertEquals(in1, b.getSecond()[0]);
@@ -285,9 +281,9 @@ public class TestGraphNodes {
         assertEquals(in.get(NDArrayIndex.interval(5,10), NDArrayIndex.all()), out1);
         assertEquals(in.get(NDArrayIndex.interval(10,15), NDArrayIndex.all()), out2);
 
-        unstack0.setErrors(out0);
-        unstack1.setErrors(out1);
-        unstack2.setErrors(out2);
+        unstack0.setEpsilon(out0);
+        unstack1.setEpsilon(out1);
+        unstack2.setEpsilon(out2);
         INDArray backward0 = unstack0.doBackward(false).getSecond()[0];
         INDArray backward1 = unstack1.doBackward(false).getSecond()[0];
         INDArray backward2 = unstack2.doBackward(false).getSecond()[0];
@@ -319,9 +315,9 @@ public class TestGraphNodes {
         assertEquals(in.get(NDArrayIndex.interval(5,10), NDArrayIndex.all(), NDArrayIndex.all(), NDArrayIndex.all()), out1);
         assertEquals(in.get(NDArrayIndex.interval(10,15), NDArrayIndex.all(), NDArrayIndex.all(), NDArrayIndex.all()), out2);
 
-        unstack0.setErrors(out0);
-        unstack1.setErrors(out1);
-        unstack2.setErrors(out2);
+        unstack0.setEpsilon(out0);
+        unstack1.setEpsilon(out1);
+        unstack2.setEpsilon(out2);
         backward0 = unstack0.doBackward(false).getSecond()[0];
         backward1 = unstack1.doBackward(false).getSecond()[0];
         backward2 = unstack2.doBackward(false).getSecond()[0];
@@ -341,7 +337,7 @@ public class TestGraphNodes {
     @Test
     public void testL2Node(){
         Nd4j.getRandom().setSeed(12345);
-        GraphVertex l2 = new L2Vertex(null,"",-1);
+        GraphVertex l2 = new L2Vertex(null,"",-1, 1e-8);
 
         INDArray in1 = Nd4j.rand(5,2);
         INDArray in2 = Nd4j.rand(5,2);
@@ -374,7 +370,7 @@ public class TestGraphNodes {
 
 
 
-        l2.setErrors(epsilon);
+        l2.setEpsilon(epsilon);
         Pair<Gradient,INDArray[]> p = l2.doBackward(false);
         assertEquals(dLda, p.getSecond()[0]);
         assertEquals(dLdb, p.getSecond()[1]);

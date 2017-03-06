@@ -513,12 +513,23 @@ public class ParagraphVectorsTest {
         INDArray original = vec.getWordVectorMatrix("DOC_16392").dup();
         INDArray inferredA1 = vec.inferVector("This is my work");
         INDArray inferredB1 = vec.inferVector("This is my work .");
+        INDArray inferredC1 = vec.inferVector("This is my day");
+        INDArray inferredD1 = vec.inferVector("This is my night");
+
+        log.info("A: {}", Arrays.toString(inferredA1.data().asFloat()));
+        log.info("C: {}", Arrays.toString(inferredC1.data().asFloat()));
+
+        assertNotEquals(inferredA1, inferredC1);
 
         double cosAO1 = Transforms.cosineSim(inferredA1.dup(), original.dup());
         double cosAB1 = Transforms.cosineSim(inferredA1.dup(), inferredB1.dup());
+        double cosAC1 = Transforms.cosineSim(inferredA1.dup(), inferredC1.dup());
+        double cosCD1 = Transforms.cosineSim(inferredD1.dup(), inferredC1.dup());
 
         log.info("Cos O/A: {}", cosAO1);
         log.info("Cos A/B: {}", cosAB1);
+        log.info("Cos A/C: {}", cosAC1);
+        log.info("Cos C/D: {}", cosCD1);
 
     }
 
@@ -903,6 +914,51 @@ public class ParagraphVectorsTest {
         log.info("SimilarityB: {}", simB);
     }
 
+    @Test
+    public void testDirectInference() throws Exception {
+        ClassPathResource resource_sentences = new ClassPathResource("/big/raw_sentences.txt");
+        ClassPathResource resource_mixed = new ClassPathResource("/paravec");
+        SentenceIterator iter = new AggregatingSentenceIterator.Builder()
+                .addSentenceIterator(new BasicLineIterator(resource_sentences.getFile()))
+                .addSentenceIterator(new FileSentenceIterator(resource_mixed.getFile()))
+                .build();
+
+        TokenizerFactory t = new DefaultTokenizerFactory();
+        t.setTokenPreProcessor(new CommonPreprocessor());
+
+        Word2Vec wordVectors = new Word2Vec.Builder()
+                .minWordFrequency(1)
+                .batchSize(250)
+                .iterations(1)
+                .epochs(3)
+                .learningRate(0.025)
+                .layerSize(150)
+                .minLearningRate(0.001)
+                .elementsLearningAlgorithm(new SkipGram<VocabWord>())
+                .useHierarchicSoftmax(true)
+                .windowSize(5)
+                .iterate(iter)
+                .tokenizerFactory(t)
+                .build();
+
+        wordVectors.fit();
+
+        ParagraphVectors pv = new ParagraphVectors.Builder()
+                .tokenizerFactory(t)
+                .iterations(10)
+                .useHierarchicSoftmax(true)
+                .trainWordVectors(true)
+                .useExistingWordVectors(wordVectors)
+                .negativeSample(0)
+                .sequenceLearningAlgorithm(new DM<VocabWord>())
+                .build();
+
+        INDArray vec1 = pv.inferVector("This text is pretty awesome");
+        INDArray vec2 = pv.inferVector("Fantastic process of crazy things happening inside just for history purposes");
+
+        log.info("vec1/vec2: {}", Transforms.cosineSim(vec1, vec2));
+    }
+
     @Ignore
     @Test
     public void testGoogleModelForInference() throws Exception {
@@ -926,5 +982,18 @@ public class ParagraphVectorsTest {
         INDArray vec2 = pv.inferVector("Fantastic process of crazy things happening inside just for history purposes");
 
         log.info("vec1/vec2: {}", Transforms.cosineSim(vec1, vec2));
+    }
+
+    @Test
+    public void testHash() {
+        VocabWord w1 = new VocabWord(1.0, "D1");
+        VocabWord w2 = new VocabWord(1.0, "Bo");
+
+
+
+        log.info("W1 > Short hash: {}; Long hash: {}", w1.getLabel().hashCode(), w1.getStorageId());
+        log.info("W2 > Short hash: {}; Long hash: {}", w2.getLabel().hashCode(), w2.getStorageId());
+
+        assertNotEquals(w1.getStorageId(), w2.getStorageId());
     }
 }

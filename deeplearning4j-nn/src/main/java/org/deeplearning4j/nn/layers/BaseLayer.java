@@ -21,6 +21,7 @@ package org.deeplearning4j.nn.layers;
 import org.deeplearning4j.berkeley.Pair;
 import org.deeplearning4j.exception.DL4JInvalidInputException;
 import org.deeplearning4j.nn.api.Layer;
+import org.deeplearning4j.nn.api.MaskState;
 import org.deeplearning4j.nn.api.Updater;
 import org.deeplearning4j.nn.conf.NeuralNetConfiguration;
 import org.deeplearning4j.nn.gradient.DefaultGradient;
@@ -60,6 +61,7 @@ public abstract class BaseLayer<LayerConfT extends org.deeplearning4j.nn.conf.la
     protected Collection<IterationListener> iterationListeners = new ArrayList<>();
     protected int index = 0;
     protected INDArray maskArray;
+    protected MaskState maskState;
     protected Solver solver;
 
     public BaseLayer(NeuralNetConfiguration conf) {
@@ -357,7 +359,7 @@ public abstract class BaseLayer<LayerConfT extends org.deeplearning4j.nn.conf.la
         INDArray W = getParam(DefaultParamInitializer.WEIGHT_KEY);
 
         //Input validation:
-        if(input.rank() != 2 || input.columns() != W.rows() ){
+        if(input.rank() != 2 || input.columns() != W.rows()) {
             if(input.rank() != 2){
                 throw new DL4JInvalidInputException("Input that is not a matrix; expected matrix (rank 2), got rank " + input.rank()
                         + " array with shape " + Arrays.toString(input.shape()));
@@ -426,7 +428,7 @@ public abstract class BaseLayer<LayerConfT extends org.deeplearning4j.nn.conf.la
 
     @Override
     public double calcL2(boolean backpropParamsOnly) {
-    	if(!conf.isUseRegularization() || conf.getLayer().getL2() <= 0.0 ) return 0.0;
+    	if(!conf.isUseRegularization() ) return 0.0;
 
         //L2 norm: sqrt( sum_i x_i^2 ) -> want sum squared weights, so l2 norm squared
         double l2Sum = 0.0;
@@ -443,13 +445,13 @@ public abstract class BaseLayer<LayerConfT extends org.deeplearning4j.nn.conf.la
 
     @Override
     public double calcL1(boolean backpropParamsOnly) {
-    	if(!conf.isUseRegularization() || conf.getLayer().getL1()  <= 0.0 ) return 0.0;
+    	if(!conf.isUseRegularization() ) return 0.0;
         double l1Sum = 0.0;
         if(conf.getL1ByParam(DefaultParamInitializer.WEIGHT_KEY) > 0.0){
-            l1Sum += conf.getLayer().getL1() * getParam(DefaultParamInitializer.WEIGHT_KEY).norm1Number().doubleValue();
+            l1Sum += conf.getL1ByParam(DefaultParamInitializer.WEIGHT_KEY) * getParam(DefaultParamInitializer.WEIGHT_KEY).norm1Number().doubleValue();
         }
         if(conf.getL1ByParam(DefaultParamInitializer.BIAS_KEY) > 0.0){
-            l1Sum += conf.getLayer().getL1() * getParam(DefaultParamInitializer.BIAS_KEY).norm1Number().doubleValue();
+            l1Sum += conf.getL1ByParam(DefaultParamInitializer.BIAS_KEY) * getParam(DefaultParamInitializer.BIAS_KEY).norm1Number().doubleValue();
         }
         return l1Sum;
     }
@@ -682,5 +684,24 @@ public abstract class BaseLayer<LayerConfT extends org.deeplearning4j.nn.conf.la
     @Override
     public INDArray getMaskArray(){
         return maskArray;
+    }
+
+    protected String layerNameAndIndex(){
+        String name = layerConf().getLayerName();
+        if(name == null){
+            name = "(not named)";
+        }
+        return "layerName=" + name + ", layerIndex=" + index;
+    }
+
+
+    @Override
+    public Pair<INDArray, MaskState> feedForwardMaskArray(INDArray maskArray, MaskState currentMaskState, int minibatchSize) {
+        //Most layers: CNN, dense, activation, etc - set mask array, mask state and then leave the mask unmodified
+
+        this.maskArray = maskArray;
+        this.maskState = currentMaskState;
+
+        return new Pair<>(maskArray, currentMaskState);
     }
 }

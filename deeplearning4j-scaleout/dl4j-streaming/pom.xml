@@ -7,7 +7,7 @@
     <groupId>org.deeplearning4j</groupId>
     <artifactId>dl4j-streaming_2.11</artifactId>
     <packaging>jar</packaging>
-    <version>0.7.3-SNAPSHOT</version>
+    <version>0.7.3_spark_1-SNAPSHOT</version>
 
     <parent>
         <artifactId>deeplearning4j-scaleout</artifactId>
@@ -17,6 +17,13 @@
 
     <properties>
         <kafka.scala.exclusion.version>2.11</kafka.scala.exclusion.version>
+        <!-- These Spark version properties have to defined be here, and NOT in the deeplearning4j-parent pom or in
+        deeplearning4j-scaleout. Otherwise, the properties will be resolved to their defaults (and not the values present
+         during the build). Whereas when defined here (the version is spark 1 vs. 2 specific) we can have different version
+          properties simultaneously (in different pom files) instead of a single global property. -->
+        <spark.version>1.6.2</spark.version>
+        <spark.major.version>1</spark.major.version>
+        <datavec.spark.version>0.7.3_spark_${spark.major.version}-SNAPSHOT</datavec.spark.version>
     </properties>
 
     <name>Dl4j Streaming</name>
@@ -27,7 +34,7 @@
         <dependency>
             <groupId>org.datavec</groupId>
             <artifactId>datavec-camel</artifactId>
-            <version>${project.version}</version>
+            <version>${project.parent.version}</version>
         </dependency>
 
         <dependency>
@@ -54,16 +61,20 @@
         <dependency>
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-streaming_2.11</artifactId>
+<<<<<<< HEAD
             <version>${spark.version}</version>
         </dependency>
         <dependency>
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-streaming-kafka_2.11</artifactId>
+=======
+>>>>>>> upstream/master
             <version>${spark.version}</version>
         </dependency>
         <dependency>
             <groupId>org.datavec</groupId>
             <artifactId>datavec-spark_2.11</artifactId>
+<<<<<<< HEAD
             <version>${datavec.version}</version>
         </dependency>
 
@@ -71,6 +82,9 @@
             <groupId>org.apache.kafka</groupId>
             <artifactId>kafka_2.11</artifactId>
             <version>${kafka.version}</version>
+=======
+            <version>${datavec.spark.version}</version>
+>>>>>>> upstream/master
         </dependency>
 
         <dependency>
@@ -83,6 +97,7 @@
             <groupId>org.apache.camel</groupId>
             <artifactId>camel-kafka</artifactId>
             <version>${camel.version}</version>
+<<<<<<< HEAD
             <!-- Exclude Kafka 2.11, for 2.11. Using property here so it isn't replaced by change-scala-versions.sh -->
             <exclusions>
                 <exclusion>
@@ -90,12 +105,34 @@
                     <artifactId>kafka_${kafka.scala.exclusion.version}</artifactId>
                 </exclusion>
             </exclusions>
+=======
+>>>>>>> upstream/master
         </dependency>
 
         <dependency>
             <groupId>org.apache.camel</groupId>
             <artifactId>camel-core</artifactId>
             <version>${camel.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka_2.11</artifactId>
+            <version>${kafka.version}</version>
+            <scope>test</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-simple</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-log4j12</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>log4j</groupId>
+                    <artifactId>log4j</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
 
@@ -108,5 +145,36 @@
         </dependency>
     </dependencies>
 
+    <build>
+        <plugins>
+            <!-- added source folder containing the code specific to the spark version -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <version>1.12</version>
+                <executions>
+                    <execution>
+                        <id>add-source</id>
+                        <phase>generate-sources</phase>
+                        <goals><goal>add-source</goal></goals>
+                        <configuration>
+                            <sources>
+                                <source>src/main/spark-${spark.major.version}</source>
+                            </sources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <profile>
+            <id>test-nd4j-native</id>
+        </profile>
+        <profile>
+            <id>test-nd4j-cuda-8.0</id>
+        </profile>
+    </profiles>
 
 </project>

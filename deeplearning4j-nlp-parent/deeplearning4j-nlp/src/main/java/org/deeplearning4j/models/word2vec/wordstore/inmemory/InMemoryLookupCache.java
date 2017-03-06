@@ -217,6 +217,11 @@ public class InMemoryLookupCache implements VocabCache<VocabWord>,Serializable {
         return ret;
     }
 
+    @Override
+    public VocabWord wordFor(long id) {
+        throw new UnsupportedOperationException();
+    }
+
     /**
      * @param index
      * @param word
@@ -249,6 +254,11 @@ public class InMemoryLookupCache implements VocabCache<VocabWord>,Serializable {
 
             wordIndex.add(word, index);
 
+    }
+
+    @Override
+    public void addWordToIndex(int index, long elementId) {
+        throw new UnsupportedOperationException();
     }
 
     /**
@@ -290,17 +300,17 @@ public class InMemoryLookupCache implements VocabCache<VocabWord>,Serializable {
     }
 
     @Override
-    public synchronized void incrementDocCount(String word, int howMuch) {
+    public synchronized void incrementDocCount(String word, long howMuch) {
         docFrequencies.incrementCount(word, howMuch);
     }
 
     @Override
-    public synchronized void setCountForDoc(String word, int count) {
+    public synchronized void setCountForDoc(String word, long count) {
         docFrequencies.setCount(word, count);
     }
 
     @Override
-    public synchronized int totalNumberOfDocs() {
+    public synchronized long totalNumberOfDocs() {
         return numDocs;
     }
 
@@ -310,7 +320,7 @@ public class InMemoryLookupCache implements VocabCache<VocabWord>,Serializable {
     }
 
     @Override
-    public synchronized void incrementTotalDocCount(int by) {
+    public synchronized void incrementTotalDocCount(long by) {
         numDocs += by;
     }
 
@@ -327,6 +337,11 @@ public class InMemoryLookupCache implements VocabCache<VocabWord>,Serializable {
     @Override
     public synchronized VocabWord tokenFor(String word) {
         return tokens.get(word);
+    }
+
+    @Override
+    public VocabWord tokenFor(long id) {
+        throw new UnsupportedOperationException();
     }
 
     @Override

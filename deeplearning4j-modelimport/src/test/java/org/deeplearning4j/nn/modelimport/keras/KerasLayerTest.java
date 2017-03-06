@@ -2,13 +2,17 @@ package org.deeplearning4j.nn.modelimport.keras;
 
 import lombok.extern.slf4j.Slf4j;
 import org.deeplearning4j.nn.conf.ConvolutionMode;
+import org.deeplearning4j.nn.conf.layers.PoolingType;
 import org.deeplearning4j.nn.conf.layers.*;
+import org.deeplearning4j.nn.modelimport.keras.layers.*;
 import org.deeplearning4j.nn.weights.WeightInit;
 import org.junit.Test;
 
 import java.util.*;
 
 import static org.deeplearning4j.nn.modelimport.keras.KerasLayer.*;
+import static org.deeplearning4j.nn.modelimport.keras.layers.KerasLstm.*;
+import static org.deeplearning4j.nn.modelimport.keras.layers.KerasBatchNormalization.*;
 import static org.junit.Assert.*;
 
 /**
@@ -30,9 +34,10 @@ public class KerasLayerTest {
     public static final double DROPOUT_DL4J = 1-DROPOUT_KERAS;
     public static final int[] KERNEL_SIZE = new int[]{1, 2};
     public static final int[] STRIDE = new int[]{3, 4};
-    public static final SubsamplingLayer.PoolingType POOLING_TYPE = SubsamplingLayer.PoolingType.MAX;
+    public static final PoolingType POOLING_TYPE = PoolingType.MAX;
     public static final double LSTM_FORGET_BIAS_DOUBLE = 1.0;
     public static final String LSTM_FORGET_BIAS_STR = "one";
+    public static final boolean LSTM_UNROLL = true;
     public static final int N_OUT = 13;
     public static final String BORDER_MODE_VALID = "valid";
     public static final int[] VALID_PADDING = new int[]{0, 0};
@@ -49,7 +54,7 @@ public class KerasLayerTest {
         config.put(LAYER_FIELD_NAME, LAYER_NAME);
         layerConfig.put(LAYER_FIELD_CONFIG, config);
 
-        ActivationLayer layer = (ActivationLayer)new KerasLayer(layerConfig).getDl4jLayer();
+        ActivationLayer layer = new KerasActivation(layerConfig).getActivationLayer();
         assertEquals(ACTIVATION_DL4J, layer.getActivationFn().toString());
         assertEquals(LAYER_NAME, layer.getLayerName());
     }
@@ -63,7 +68,7 @@ public class KerasLayerTest {
         config.put(LAYER_FIELD_DROPOUT, DROPOUT_KERAS);
         layerConfig.put(LAYER_FIELD_CONFIG, config);
 
-        DropoutLayer layer = (DropoutLayer) new KerasLayer(layerConfig).getDl4jLayer();
+        DropoutLayer layer = new KerasDropout(layerConfig).getDropoutLayer();
         assertEquals(LAYER_NAME, layer.getLayerName());
         assertEquals(DROPOUT_DL4J, layer.getDropOut(), 0.0);
     }
@@ -84,7 +89,7 @@ public class KerasLayerTest {
         config.put(LAYER_FIELD_OUTPUT_DIM, N_OUT);
         layerConfig.put(LAYER_FIELD_CONFIG, config);
 
-        DenseLayer layer = (DenseLayer) new KerasLayer(layerConfig).getDl4jLayer();
+        DenseLayer layer = new KerasDense(layerConfig, false).getDenseLayer();
         assertEquals(ACTIVATION_DL4J, layer.getActivationFn().toString());
         assertEquals(LAYER_NAME, layer.getLayerName());
         assertEquals(INIT_DL4J, layer.getWeightInit());
@@ -117,7 +122,7 @@ public class KerasLayerTest {
         config.put(LAYER_FIELD_BORDER_MODE, BORDER_MODE_VALID);
         layerConfig.put(LAYER_FIELD_CONFIG, config);
 
-        ConvolutionLayer layer = (ConvolutionLayer) new KerasLayer(layerConfig).getDl4jLayer();
+        ConvolutionLayer layer = new KerasConvolution(layerConfig).getConvolutionLayer();
         assertEquals(ACTIVATION_DL4J, layer.getActivationFn().toString());
         assertEquals(LAYER_NAME, layer.getLayerName());
         assertEquals(INIT_DL4J, layer.getWeightInit());
@@ -148,7 +153,7 @@ public class KerasLayerTest {
         config.put(LAYER_FIELD_BORDER_MODE, BORDER_MODE_VALID);
         layerConfig.put(LAYER_FIELD_CONFIG, config);
 
-        SubsamplingLayer layer = (SubsamplingLayer) new KerasLayer(layerConfig).getDl4jLayer();
+        SubsamplingLayer layer = new KerasPooling(layerConfig).getSubsamplingLayer();
         assertEquals(LAYER_NAME, layer.getLayerName());
         assertArrayEquals(KERNEL_SIZE, layer.getKernelSize());
         assertArrayEquals(STRIDE, layer.getStride());
@@ -175,9 +180,10 @@ public class KerasLayerTest {
         config.put(LAYER_FIELD_DROPOUT_U, 0.0);
         config.put(LAYER_FIELD_FORGET_BIAS_INIT, LSTM_FORGET_BIAS_STR);
         config.put(LAYER_FIELD_OUTPUT_DIM, N_OUT);
+        config.put(LAYER_FIELD_UNROLL, LSTM_UNROLL);
         layerConfig.put(LAYER_FIELD_CONFIG, config);
 
-        GravesLSTM layer = (GravesLSTM) new KerasLayer(layerConfig).getDl4jLayer();
+        GravesLSTM layer = new KerasLstm(layerConfig).getGravesLSTMLayer();
         assertEquals(ACTIVATION_DL4J, layer.getActivationFn().toString());
         assertEquals(LAYER_NAME, layer.getLayerName());
         assertEquals(INIT_DL4J, layer.getWeightInit());
@@ -202,7 +208,7 @@ public class KerasLayerTest {
         config.put(LAYER_FIELD_AXIS, 3);
         layerConfig.put(LAYER_FIELD_CONFIG, config);
 
-        BatchNormalization layer = (BatchNormalization) new KerasLayer(layerConfig).getDl4jLayer();
+        BatchNormalization layer = new KerasBatchNormalization(layerConfig).getBatchNormalizationLayer();
         assertEquals(LAYER_NAME, layer.getLayerName());
         assertEquals(EPSILON, layer.getEps(), 0.0);
         assertEquals(MOMENTUM, layer.getMomentum(), 0.0);

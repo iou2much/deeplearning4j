@@ -18,8 +18,9 @@
 
 package org.deeplearning4j.spark.impl.layer;
 
-import org.apache.spark.api.java.function.FlatMapFunction;
 import org.apache.spark.broadcast.Broadcast;
+import org.datavec.spark.functions.FlatMapFunctionAdapter;
+import org.datavec.spark.transform.BaseFlatMapFunctionAdaptee;
 import org.deeplearning4j.nn.api.Layer;
 import org.deeplearning4j.nn.conf.NeuralNetConfiguration;
 import org.deeplearning4j.nn.layers.OutputLayer;
@@ -40,7 +41,20 @@ import java.util.List;
  *
  * @author Adam Gibson
  */
-public class IterativeReduceFlatMap implements FlatMapFunction<Iterator<DataSet>,INDArray> {
+public class IterativeReduceFlatMap extends BaseFlatMapFunctionAdaptee<Iterator<DataSet>,INDArray> {
+
+    public IterativeReduceFlatMap(String json, Broadcast<INDArray> params) {
+        super(new IterativeReduceFlatMapAdapter(json, params));
+    }
+}
+
+/**
+ * Iterative reduce with
+ * flat map using map partitions
+ *
+ * @author Adam Gibson
+ */
+class IterativeReduceFlatMapAdapter implements FlatMapFunctionAdapter<Iterator<DataSet>,INDArray> {
 
     private String json;
     private Broadcast<INDArray> params;
@@ -51,7 +65,7 @@ public class IterativeReduceFlatMap implements FlatMapFunction<Iterator<DataSet>
      * @param json json configuration for the network
      * @param params the parameters to use for the network
      */
-    public IterativeReduceFlatMap(String json, Broadcast<INDArray> params) {
+    public IterativeReduceFlatMapAdapter(String json, Broadcast<INDArray> params) {
         this.json = json;
         this.params = params;
     }
@@ -78,7 +92,7 @@ public class IterativeReduceFlatMap implements FlatMapFunction<Iterator<DataSet>
         network.setBackpropGradientsViewArray(Nd4j.create(1,numParams));
         INDArray val = params.value().unsafeDuplication();
         if(val.length() != network.numParams())
-            throw new IllegalStateException("Network did not have same number of parameters as the broadcasted set parameters");
+            throw new IllegalStateException("Network did not have same number of parameters as the broadcast set parameters");
         network.setParams(val);
        if(network instanceof OutputLayer) {
            OutputLayer o = (OutputLayer) network;
